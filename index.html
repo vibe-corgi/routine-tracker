@@ -154,10 +154,23 @@ body {
 
 .routine-item {
   background: var(--card); border-radius: 12px;
-  padding: 13px 14px; display: flex; align-items: center; gap: 11px;
+  padding: 13px 14px; display: flex; flex-direction: column; gap: 6px;
   box-shadow: var(--shadow); transition: opacity .25s, transform .15s;
   user-select: none;
 }
+.routine-item-row {
+  display: flex; align-items: center; gap: 11px;
+}
+.routine-memo-input {
+  width: 100%; box-sizing: border-box;
+  border: none; border-top: 1px solid var(--border);
+  background: transparent; color: var(--text);
+  font-size: 13px; padding: 6px 2px 2px 2px;
+  resize: none; outline: none; font-family: inherit;
+  line-height: 1.5; min-height: 24px; overflow: hidden;
+  user-select: text;
+}
+.routine-memo-input::placeholder { color: var(--text-sub); opacity: .7; }
 .routine-item.checked { opacity: .55; }
 .routine-item:active { transform: scale(.99); }
 
@@ -1012,6 +1025,7 @@ function renderContent() {
       const timeBadge = isChecked
         ? `<span class="r-time" onclick="editTime('${r.id}')">${timeVal || '+ 시간'}</span>`
         : '';
+      const memoVal = esc(r.memo || '');
       html += `
         <div class="routine-item${isChecked?' checked':''}"
           draggable="${editMode}"
@@ -1019,14 +1033,22 @@ function renderContent() {
           ondragover="dragOver(event,'${r.id}')"
           ondragleave="dragLeave(event)"
           ondrop="dragDrop(event,'${r.id}')">
-          <span class="r-drag">⠿</span>
-          <div class="r-check${isChecked?' checked':''}" onclick="toggleCheck('${r.id}')"></div>
-          <span class="r-name${editMode?'':' r-name-clickable'}" ${editMode?'':` onclick="openRoutineStats('${r.id}','${esc(r.name)}')" title="통계 보기"`}>${esc(r.name)}</span>
-          ${timeBadge}
-          ${r.timeStart ? `<span class="r-schedule">${r.timeStart}${r.timeEnd?'~'+r.timeEnd:''}</span>` : ''}
-          <span class="r-goal" onclick="setGoal('${r.id}',${goal})">${goalLabel}</span>
-          <button class="r-edit" onclick="openRoutineSettings('${r.id}','${esc(r.name)}','${r.timeStart||''}','${r.timeEnd||''}')" title="루틴 설정">✏️</button>
-          <button class="r-del" onclick="deleteRoutine('${r.id}')">✕</button>
+          <div class="routine-item-row">
+            <span class="r-drag">⠿</span>
+            <div class="r-check${isChecked?' checked':''}" onclick="toggleCheck('${r.id}')"></div>
+            <span class="r-name${editMode?'':' r-name-clickable'}" ${editMode?'':` onclick="openRoutineStats('${r.id}','${esc(r.name)}')" title="통계 보기"`}>${esc(r.name)}</span>
+            ${timeBadge}
+            ${r.timeStart ? `<span class="r-schedule">${r.timeStart}${r.timeEnd?'~'+r.timeEnd:''}</span>` : ''}
+            <span class="r-goal" onclick="setGoal('${r.id}',${goal})">${goalLabel}</span>
+            <button class="r-edit" onclick="openRoutineSettings('${r.id}','${esc(r.name)}','${r.timeStart||''}','${r.timeEnd||''}')" title="루틴 설정">✏️</button>
+            <button class="r-del" onclick="deleteRoutine('${r.id}')">✕</button>
+          </div>
+          <textarea class="routine-memo-input" rows="1"
+            placeholder="메모..."
+            oninput="onRoutineMemoInput(this,'${r.id}')"
+            onclick="event.stopPropagation()"
+            ondragstart="event.stopPropagation()"
+          >${memoVal}</textarea>
         </div>
       `;
     });
@@ -1301,6 +1323,20 @@ function onMemoInput(tabId) {
     const el = document.getElementById('memo-saved');
     if (el) { el.style.opacity = '1'; setTimeout(() => { el.style.opacity = '0'; }, 2000); }
   }, 1200);
+}
+
+let routineMemoDebounces = {};
+function onRoutineMemoInput(el, routineId) {
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
+  const val = el.value;
+  // update in-memory routines array so re-renders don't reset the value
+  const r = routines.find(r => r.id === routineId);
+  if (r) r.memo = val;
+  clearTimeout(routineMemoDebounces[routineId]);
+  routineMemoDebounces[routineId] = setTimeout(async () => {
+    await col('routines').doc(routineId).update({ memo: val || firebase.firestore.FieldValue.delete() });
+  }, 1000);
 }
 
 // ── All Memos Modal ──────────────────────────
