@@ -797,17 +797,14 @@ function show(id) {
 
 function googleLogin() {
   const provider = new firebase.auth.GoogleAuthProvider();
-  // iOS Safari / PWA 환경에서는 popup이 sessionStorage 공유 못해서 redirect 사용
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-  const isStandalone = window.navigator.standalone === true ||
-    window.matchMedia('(display-mode: standalone)').matches;
-  if (isIOS || isStandalone) {
-    firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL).then(() =>
-      firebase.auth().signInWithRedirect(provider)
-    ).catch(e => toast('로그인 실패: ' + e.message));
-  } else {
-    firebase.auth().signInWithPopup(provider).catch(e => toast('로그인 실패: ' + e.message));
-  }
+  firebase.auth().signInWithPopup(provider).catch(e => {
+    if (e.code === 'auth/popup-blocked' || e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request') {
+      // 팝업 차단 시 redirect 폴백
+      firebase.auth().signInWithRedirect(provider);
+    } else if (e.code !== 'auth/cancelled-popup-request') {
+      toast('로그인 실패: ' + e.message);
+    }
+  });
 }
 
 function openSettings() {
