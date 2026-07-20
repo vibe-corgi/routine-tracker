@@ -269,6 +269,30 @@ body {
   font-size: 13px; font-weight: 400; opacity: .85; margin-top: 4px;
 }
 
+/* ─────────────── DATE NAV ─────────────── */
+.date-nav { display: flex; align-items: center; gap: 6px; }
+.date-nav-btn {
+  width: 28px; height: 28px; border: none; background: var(--bg);
+  border-radius: 8px; cursor: pointer; font-size: 15px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-sub);
+}
+.date-nav-btn:hover { background: var(--border); }
+.date-nav-btn:disabled { opacity: .3; cursor: default; }
+.past-badge {
+  font-size: 11px; background: #FEF3C7; color: #92400E;
+  border-radius: 99px; padding: 2px 8px; font-weight: 600;
+}
+
+/* ─────────────── DRAG ─────────────── */
+.r-drag {
+  display: none; color: var(--text-sub); cursor: grab; font-size: 16px;
+  padding: 0 2px; flex-shrink: 0; user-select: none;
+}
+.edit-mode .r-drag { display: flex; align-items: center; }
+.routine-item.dragging { opacity: .35; }
+.routine-item.drag-over { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 12px; }
+
 /* ─────────────── STREAK BADGE ─────────────── */
 .tab-btn .tab-done { font-size: 12px; }
 .streak-header {
@@ -366,7 +390,11 @@ body {
   <div id="header">
     <div>
       <h1>📋 루틴 트래커</h1>
-      <div class="date-text" id="date-text"></div>
+      <div class="date-nav">
+        <button class="date-nav-btn" id="btn-prev" onclick="navigateDate(-1)">‹</button>
+        <div class="date-text" id="date-text"></div>
+        <button class="date-nav-btn" id="btn-next" onclick="navigateDate(1)">›</button>
+      </div>
     </div>
     <button class="btn-icon" onclick="openSettings()" title="설정">⚙️</button>
   </div>
@@ -469,6 +497,9 @@ let editTabId = null;
 let ctxTab = null;
 let unsubs = [];
 let routineUnsub = null;
+let viewDate = '';
+let checkUnsub = null;
+let dragSrcId = null;
 
 // ═══════════════════════════════════════════
 // SETUP FLOW
@@ -535,10 +566,21 @@ function col(name) {
 // ═══════════════════════════════════════════
 function launchApp() {
   document.getElementById('login-screen').classList.remove('active');
-  const app = document.getElementById('app');
-  app.style.display = 'flex';
+  document.getElementById('app').style.display = 'flex';
+  viewDate = todayStr();
   updateDateText();
   startListeners();
+}
+
+function navigateDate(dir) {
+  const d = new Date(viewDate + 'T00:00:00');
+  d.setDate(d.getDate() + dir);
+  const next = `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;
+  if (next > todayStr()) return;
+  viewDate = next;
+  updateDateText();
+  subscribeChecks();
+  renderContent();
 }
 
 function startListeners() {
@@ -552,13 +594,17 @@ function startListeners() {
     startRoutineListener();
   });
 
-  const u2 = col('checks').doc(todayStr()).onSnapshot(doc => {
+  unsubs.push(u1);
+  subscribeChecks();
+  startWeekListeners();
+}
+
+function subscribeChecks() {
+  if (checkUnsub) checkUnsub();
+  checkUnsub = col('checks').doc(viewDate).onSnapshot(doc => {
     todayChecks = doc.exists ? (doc.data() || {}) : {};
     renderContent();
   });
-
-  unsubs.push(u1, u2);
-  startWeekListeners();
 }
 
 function startRoutineListener() {
@@ -600,9 +646,12 @@ function getThisWeek() {
   });
 }
 function updateDateText() {
-  const d = new Date();
+  const d = new Date((viewDate || todayStr()) + 'T00:00:00');
+  const isToday = (viewDate || todayStr()) === todayStr();
   const el = document.getElementById('date-text');
-  if (el) el.textContent = `${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일 (${DAY_KO[d.getDay()]})`;
+  if (el) el.innerHTML = `${d.getMonth()+1}월 ${d.getDate()}일 (${DAY_KO[d.getDay()]})${isToday ? '' : ' <span class="past-badge">과거</span>'}`;
+  const btnNext = document.getElementById('btn-next');
+  if (btnNext) btnNext.disabled = isToday;
 }
 
 // ═══════════════════════════════════════════
@@ -700,7 +749,7 @@ function renderContent() {
   if (tabRoutines.length === 0) {
     html += `<div class="empty-state" style="padding:32px 0"><div class="ei">🌱</div><p>아래 버튼으로 루틴을 추가하세요</p></div>`;
   } else {
-    tabRoutines.forEach((r, idx) => {
+    tabRoutines.forEach((r) => {
       const isChecked = !!todayChecks[r.id];
       const timeVal = todayChecks[r.id + '_t'] || '';
       const goal = r.goal || 7;
@@ -709,11 +758,13 @@ function renderContent() {
         ? `<span class="r-time" onclick="editTime('${r.id}')">${timeVal || '+ 시간'}</span>`
         : '';
       html += `
-        <div class="routine-item${isChecked?' checked':''}">
-          <div class="r-move">
-            <button onclick="moveRoutine('${r.id}',-1)" ${idx===0?'disabled':''}>▲</button>
-            <button onclick="moveRoutine('${r.id}',1)" ${idx===tabRoutines.length-1?'disabled':''}>▼</button>
-          </div>
+        <div class="routine-item${isChecked?' checked':''}"
+          draggable="${editMode}"
+          ondragstart="dragStart(event,'${r.id}')"
+          ondragover="dragOver(event,'${r.id}')"
+          ondragleave="dragLeave(event)"
+          ondrop="dragDrop(event,'${r.id}')">
+          <span class="r-drag">⠿</span>
           <div class="r-check${isChecked?' checked':''}" onclick="toggleCheck('${r.id}')"></div>
           <span class="r-name">${esc(r.name)}</span>
           ${timeBadge}
@@ -823,7 +874,7 @@ function toggleCheck(routineId) {
   const update = { [routineId]: newVal };
   if (newVal) update[routineId + '_t'] = timeStr;
   else update[routineId + '_t'] = firebase.firestore.FieldValue.delete();
-  col('checks').doc(todayStr()).set(update, { merge: true });
+  col('checks').doc(viewDate).set(update, { merge: true });
   renderContent();
 }
 
@@ -834,7 +885,7 @@ function editTime(routineId) {
   const valid = /^\d{1,2}:\d{2}$/.test(t.trim());
   if (!valid) { toast('올바른 형식이 아닙니다 (예: 09:30)'); return; }
   todayChecks[routineId + '_t'] = t.trim();
-  col('checks').doc(todayStr()).set({ [routineId + '_t']: t.trim() }, { merge: true });
+  col('checks').doc(viewDate).set({ [routineId + '_t']: t.trim() }, { merge: true });
   renderContent();
 }
 
@@ -915,6 +966,39 @@ async function saveRoutine() {
   await col('routines').add({ name, tabId: currentTabId, order: n });
   closeModal('routine-modal');
   toast('루틴이 추가되었습니다');
+}
+
+function dragStart(e, id) {
+  dragSrcId = id;
+  e.dataTransfer.effectAllowed = 'move';
+  setTimeout(() => e.target.closest('.routine-item').classList.add('dragging'), 0);
+}
+function dragOver(e, id) {
+  e.preventDefault();
+  document.querySelectorAll('.routine-item').forEach(el => el.classList.remove('drag-over'));
+  if (dragSrcId !== id) e.target.closest('.routine-item')?.classList.add('drag-over');
+}
+function dragLeave(e) {
+  e.target.closest('.routine-item')?.classList.remove('drag-over');
+}
+async function dragDrop(e, targetId) {
+  e.preventDefault();
+  document.querySelectorAll('.routine-item').forEach(el => {
+    el.classList.remove('drag-over'); el.classList.remove('dragging');
+  });
+  if (!dragSrcId || dragSrcId === targetId) { dragSrcId = null; return; }
+  const tabRoutines = routines
+    .filter(r => r.tabId === currentTabId)
+    .sort((a,b) => (a.order||0) - (b.order||0));
+  const fromIdx = tabRoutines.findIndex(r => r.id === dragSrcId);
+  const toIdx   = tabRoutines.findIndex(r => r.id === targetId);
+  const reordered = [...tabRoutines];
+  const [moved] = reordered.splice(fromIdx, 1);
+  reordered.splice(toIdx, 0, moved);
+  const batch = db.batch();
+  reordered.forEach((r, i) => batch.update(col('routines').doc(r.id), { order: i }));
+  await batch.commit();
+  dragSrcId = null;
 }
 
 async function editRoutineName(id, currentName) {
