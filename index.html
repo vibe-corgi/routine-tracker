@@ -111,15 +111,18 @@ body {
 /* ─────────────── TAB BAR ─────────────── */
 #tab-bar {
   background: var(--card); border-bottom: 1px solid var(--border);
-  padding: 0 8px; display: flex; overflow-x: auto; scrollbar-width: none;
-  gap: 2px; align-items: stretch;
+  display: flex; align-items: stretch;
 }
-#tab-bar::-webkit-scrollbar { display: none; }
+#tab-scroll {
+  flex: 1; display: flex; overflow-x: auto; scrollbar-width: none;
+  gap: 2px; align-items: stretch; padding: 0 4px;
+}
+#tab-scroll::-webkit-scrollbar { display: none; }
 
 .tab-btn {
   padding: 13px 15px; border: none; background: transparent;
   font-size: 14px; font-weight: 500; color: var(--text-sub);
-  cursor: pointer; white-space: nowrap;
+  cursor: pointer; white-space: nowrap; flex-shrink: 0;
   border-bottom: 2.5px solid transparent; transition: all .2s;
   font-family: inherit; display: flex; align-items: center; gap: 5px;
 }
@@ -128,7 +131,7 @@ body {
   padding: 10px 12px; border: none; background: transparent;
   color: var(--text-sub); cursor: pointer; font-size: 22px;
   font-family: inherit; flex-shrink: 0; display: flex; align-items: center;
-  margin-left: auto;
+  border-left: 1px solid var(--border);
 }
 .tab-add-btn:hover { color: var(--accent); }
 
@@ -557,6 +560,7 @@ body {
   </div>
 
   <div id="tab-bar">
+    <div id="tab-scroll"></div>
     <button class="tab-add-btn" onclick="openAddTab()">+</button>
   </div>
 
@@ -943,8 +947,7 @@ function updateDateText() {
 // RENDER TABS
 // ═══════════════════════════════════════════
 function renderTabs() {
-  const bar = document.getElementById('tab-bar');
-  const addBtn = bar.querySelector('.tab-add-btn');
+  const bar = document.getElementById('tab-scroll');
   bar.querySelectorAll('.tab-btn').forEach(el => el.remove());
 
   tabs.forEach(tab => {
@@ -962,8 +965,11 @@ function renderTabs() {
     btn.onclick = () => selectTab(tab.id);
     btn.oncontextmenu = e => { e.preventDefault(); showCtxMenu(e, tab); };
     btn.title = '우클릭: 편집/삭제';
-    bar.insertBefore(btn, addBtn);
+    bar.appendChild(btn);
   });
+  // 선택된 탭이 보이도록 스크롤
+  const active = bar.querySelector('.tab-btn.active');
+  if (active) active.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
 
 function selectTab(id) {
