@@ -408,8 +408,11 @@ body {
 .stat-item .stat-val { font-size: 20px; font-weight: 700; }
 .stat-item .stat-lbl { font-size: 11px; color: var(--text-sub); margin-top: 2px; }
 
-.tab-stats-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.tab-stats-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); }
 .tab-stats-row:last-child { border-bottom: none; }
+
+.ts-section { padding-bottom: 18px; margin-bottom: 18px; border-bottom: 1px solid var(--border); }
+.ts-title { font-size: 12px; font-weight: 700; color: var(--text-sub); letter-spacing: .4px; margin-bottom: 12px; text-transform: uppercase; }
 .tab-stats-name { flex: 1; font-size: 14px; font-weight: 500; }
 .tab-stats-bar-wrap { width: 80px; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
 .tab-stats-bar { height: 100%; background: var(--success); border-radius: 3px; }
@@ -1505,50 +1508,142 @@ function renderStatsContent() {
 }
 
 async function openTabStats(tab) {
-  const tabRoutines = routines.filter(r => r.tabId === tab.id).sort((a,b) => (a.order||0)-(b.order||0));
   document.getElementById('tab-stats-title').textContent = `${tab.emoji||''} ${tab.name} 통계`;
   document.getElementById('tab-stats-content').innerHTML = '<div style="text-align:center;padding:32px;color:var(--text-sub)">로딩 중…</div>';
   openModal('tab-stats-modal');
 
-  const tod = todayStr();
-  const monthDates = [];
-  const [year, month] = tod.split('-').map(Number);
-  const lastDay = new Date(year, month, 0).getDate();
-  for (let d = 1; d <= lastDay; d++) {
-    const ds = `${year}-${p2(month)}-${p2(d)}`;
-    if (ds <= tod) monthDates.push(ds);
+  const tabRoutines = routines.filter(r => r.tabId === tab.id).sort((a,b) => (a.order||0)-(b.order||0));
+  if (tabRoutines.length === 0) {
+    document.getElementById('tab-stats-content').innerHTML = '<div style="padding:24px;color:var(--text-sub);text-align:center">루틴이 없습니다</div>';
+    return;
   }
 
-  const monthCache = {};
-  await Promise.all(monthDates.map(async date => {
+  const tod = todayStr();
+  const [cy, cm] = tod.split('-').map(Number);
+
+  // Load 60 days (covers ~8 weeks + current month)
+  const dates60 = Array.from({length:60}, (_, i) => {
+    const d = new Date(tod + 'T00:00:00');
+    d.setDate(d.getDate() - (59-i));
+    return `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;
+  });
+  const tc = {};
+  await Promise.all(dates60.map(async date => {
     const doc = await col('checks').doc(date).get();
-    monthCache[date] = doc.exists ? (doc.data() || {}) : {};
+    tc[date] = doc.exists ? (doc.data()||{}) : {};
   }));
 
-  let html = `<div style="font-size:12px;color:var(--text-sub);margin-bottom:12px">${year}년 ${month}월 달성률</div>`;
-  if (tabRoutines.length === 0) {
-    html += '<div style="color:var(--text-sub);font-size:14px;padding:16px 0">루틴이 없습니다</div>';
-  } else {
-    tabRoutines.forEach(r => {
-      const done = monthDates.filter(d => monthCache[d][r.id]).length;
-      const pct = monthDates.length > 0 ? Math.round(done / monthDates.length * 100) : 0;
-      html += `<div class="tab-stats-row">
-        <span class="tab-stats-name">${esc(r.name)}</span>
-        <div class="tab-stats-bar-wrap"><div class="tab-stats-bar" style="width:${pct}%"></div></div>
-        <span class="tab-stats-pct">${pct}%</span>
-      </div>`;
-    });
+  const rRatio = (date, r) => tc[date]?.[r.id] ? 1 : 0;
+  const tabRatio = (date) => tabRoutines.length > 0
+    ? tabRoutines.reduce((s,r) => s+rRatio(date,r), 0) / tabRoutines.length : 0;
 
-    const overallPct = tabRoutines.length > 0 && monthDates.length > 0
-      ? Math.round(monthDates.reduce((s, d) => {
-          const cnt = tabRoutines.filter(r => monthCache[d][r.id]).length;
-          return s + cnt / tabRoutines.length;
-        }, 0) / monthDates.length * 100) : 0;
-    html += `<div style="margin-top:14px;padding-top:12px;border-top:2px solid var(--border);display:flex;justify-content:space-between;align-items:center">
-      <span style="font-weight:700;font-size:14px">전체 평균</span>
-      <span style="font-size:18px;font-weight:800;color:var(--success)">${overallPct}%</span>
-    </div>`;
+  let html = '';
+
+  // ═══ 1. MONTHLY HEATMAP ═══
+  const firstDay = new Date(cy, cm-1, 1);
+  const lastDay  = new Date(cy, cm, 0);
+  const startOffset = firstDay.getDay() === 0 ? 6 : firstDay.getDay()-1;
+
+  html += `<div class="ts-section">
+    <div class="ts-title">📅 이번 달 히트맵</div>
+    <div class="stats-calendar-hdr">${['월','화','수','목','금','토','일'].map(d=>`<div style="text-align:center;font-size:10px;color:var(--text-sub)">${d}</div>`).join('')}</div>
+    <div class="stats-calendar">`;
+  for (let i=0;i<startOffset;i++) html+='<div class="cal-day empty"></div>';
+  for (let day=1;day<=lastDay.getDate();day++) {
+    const ds = `${cy}-${p2(cm)}-${p2(day)}`;
+    const isFuture = ds > tod, isToday = ds === tod;
+    const ratio = !isFuture ? tabRatio(ds) : -1;
+    const [bg,fg] = ratio<0 ? ['var(--border)','var(--text-sub)']
+      : ratio===0 ? ['#F3F4F6','#9CA3AF']
+      : ratio<0.5 ? ['#A7F3D0','#065F46']
+      : ratio<1   ? ['#34D399','#064E3B']
+      :              ['#10B981','white'];
+    const cnt = ratio>=0 ? tabRoutines.filter(r=>tc[ds]?.[r.id]).length : 0;
+    html += `<div class="cal-day" style="background:${bg};color:${fg};opacity:${isFuture?.4:1}${isToday?';outline:2px solid var(--accent);outline-offset:-1px':''}" title="${cnt}/${tabRoutines.length}">${day}</div>`;
   }
+  html += `</div></div>`;
+
+  // ═══ 2. WEEKDAY PATTERN ═══
+  const wdAcc = Array(7).fill(null).map(()=>({sum:0,cnt:0}));
+  dates60.filter(d=>d<=tod).forEach(ds => {
+    const dow = new Date(ds+'T00:00:00').getDay();
+    const idx = dow===0 ? 6 : dow-1;
+    wdAcc[idx].sum += tabRatio(ds);
+    wdAcc[idx].cnt++;
+  });
+  const wdRates = wdAcc.map(w => w.cnt>0 ? w.sum/w.cnt : 0);
+  const wdMax = Math.max(...wdRates, 0.001);
+  const BAR_H = 60;
+
+  html += `<div class="ts-section">
+    <div class="ts-title">📊 요일별 패턴</div>
+    <div style="display:flex;align-items:flex-end;gap:6px">`;
+  DAY_MON.forEach((label,idx) => {
+    const rate = wdRates[idx];
+    const pct  = Math.round(rate*100);
+    const barH = Math.max(rate>0?3:1, Math.round(rate/wdMax*BAR_H));
+    const col  = pct>=80?'#10B981':pct>=50?'#F59E0B':'#EF4444';
+    html += `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">
+      <span style="font-size:9px;font-weight:700;color:${pct>0?col:'transparent'}">${pct}%</span>
+      <div style="width:100%;height:${BAR_H}px;display:flex;align-items:flex-end">
+        <div style="width:100%;height:${barH}px;background:${pct>0?col:'var(--border)'};border-radius:4px 4px 0 0"></div>
+      </div>
+      <span style="font-size:11px;color:var(--text-sub)">${label}</span>
+    </div>`;
+  });
+  html += `</div></div>`;
+
+  // ═══ 3. WEEKLY TREND (8 weeks) ═══
+  const weeks = Array.from({length:8}, (_,w) => {
+    const anchor = new Date(tod+'T00:00:00');
+    anchor.setDate(anchor.getDate() - (7-w)*7);
+    const anchorStr = `${anchor.getFullYear()}-${p2(anchor.getMonth()+1)}-${p2(anchor.getDate())}`;
+    const wDates = getWeekOf(anchorStr);
+    const past = wDates.filter(d => d<=tod && tc[d]!==undefined);
+    const rate = past.length>0 ? past.reduce((s,d)=>s+tabRatio(d),0)/past.length : 0;
+    const wStart = new Date(wDates[0]+'T00:00:00');
+    return { label:`${wStart.getMonth()+1}/${wStart.getDate()}`, rate, past, isThis: w===7 };
+  });
+  const wMax = Math.max(...weeks.map(w=>w.rate), 0.001);
+
+  html += `<div class="ts-section">
+    <div class="ts-title">📈 주간 트렌드 <span style="font-weight:400;font-size:11px">(최근 8주)</span></div>
+    <div style="display:flex;align-items:flex-end;gap:4px">`;
+  weeks.forEach(w => {
+    const pct  = Math.round(w.rate*100);
+    const barH = Math.max(w.rate>0?3:1, Math.round(w.rate/wMax*BAR_H));
+    const col  = pct>=80?'#10B981':pct>=50?'#F59E0B':pct>0?'#EF4444':'#E5E7EB';
+    html += `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">
+      <span style="font-size:9px;font-weight:700;color:${pct>0?col:'transparent'}">${pct}%</span>
+      <div style="width:100%;height:${BAR_H}px;display:flex;align-items:flex-end">
+        <div style="width:100%;height:${barH}px;background:${col};border-radius:4px 4px 0 0${w.isThis?';outline:2px solid var(--accent);outline-offset:1px':''}"></div>
+      </div>
+      <span style="font-size:9px;color:${w.isThis?'var(--accent)':'var(--text-sub)'};font-weight:${w.isThis?700:400}">${w.isThis?'이번주':w.label}</span>
+    </div>`;
+  });
+  html += `</div></div>`;
+
+  // ═══ 4. BEST / WORST ═══
+  const monthDs = dates60.filter(d=>d.startsWith(`${cy}-${p2(cm)}`)&&d<=tod);
+  const ranked = tabRoutines.map(r => {
+    const done = monthDs.filter(d=>tc[d]?.[r.id]).length;
+    return { r, pct: monthDs.length>0 ? Math.round(done/monthDs.length*100) : 0 };
+  }).sort((a,b)=>b.pct-a.pct);
+
+  html += `<div class="ts-section" style="border-bottom:none">
+    <div class="ts-title">🏆 이번 달 루틴 순위</div>`;
+  const medals = ['🥇','🥈','🥉'];
+  ranked.forEach((item,i) => {
+    const icon = medals[i] || `${i+1}위`;
+    const col  = item.pct>=80?'#10B981':item.pct>=50?'#F59E0B':'#EF4444';
+    html += `<div class="tab-stats-row">
+      <span style="font-size:15px;flex-shrink:0;width:26px">${icon}</span>
+      <span class="tab-stats-name">${esc(item.r.name)}</span>
+      <div class="tab-stats-bar-wrap" style="width:70px"><div class="tab-stats-bar" style="width:${item.pct}%;background:${col}"></div></div>
+      <span class="tab-stats-pct" style="color:${col}">${item.pct}%</span>
+    </div>`;
+  });
+  html += `</div>`;
 
   document.getElementById('tab-stats-content').innerHTML = html;
 }
