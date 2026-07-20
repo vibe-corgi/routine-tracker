@@ -507,8 +507,8 @@ body {
         <button class="date-nav-btn" id="btn-next" onclick="navigateDate(1)">›</button>
       </div>
     </div>
-    <button class="btn-icon" onclick="openAllMemos()" title="메모 모아보기">📝</button>
     <button class="btn-icon" onclick="openSettings()" title="설정">⚙️</button>
+    <button class="btn-icon" onclick="openAllMemos()" title="메모 모아보기">📝</button>
   </div>
 
   <div id="tab-bar">
@@ -943,6 +943,7 @@ function renderContent() {
       </div>
       <div class="tab-header-actions">
         <button class="btn-icon" onclick="toggleEditMode()" title="${editMode?'편집 완료':'루틴 편집'}">${editMode?'✅':'✏️'}</button>
+        <button class="btn-icon" onclick="openTabStats(tabs.find(t=>t.id==='${tab.id}'))" title="탭 통계">📊</button>
         <button class="btn-icon" onclick="showCtxMenuByBtn(event, ${tabs.indexOf(tab)})" title="탭 옵션">⋯</button>
       </div>
     </div>
@@ -1514,7 +1515,6 @@ function showCtxMenu(e, tab) {
   const menu = document.getElementById('ctx');
   menu.innerHTML = `
     <button onclick="openEditTab();hideCtx()">✏️ 탭 편집</button>
-    <button onclick="openTabStats(ctxTab);hideCtx()">📊 탭 통계</button>
     <hr>
     <button class="danger" onclick="deleteTab();hideCtx()">🗑️ 탭 삭제</button>
   `;
