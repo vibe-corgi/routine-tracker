@@ -296,10 +296,10 @@ body {
 /* ─────────────── STREAK BADGE ─────────────── */
 .tab-btn .tab-done { font-size: 12px; }
 .streak-header {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; gap: 4px;
   margin-bottom: 14px;
 }
-.streak-header h3 { font-size: 13px; font-weight: 600; color: var(--text-sub); }
+.streak-header h3 { font-size: 13px; font-weight: 600; color: var(--text-sub); flex: 1; }
 .streak-count {
   font-size: 12px; font-weight: 700; color: var(--success);
   background: #D1FAE5; padding: 3px 10px; border-radius: 99px;
@@ -636,6 +636,7 @@ let statsWeekAnchor = '';
 let statsMonthYear = 0;
 let statsMonthMonth = 0;
 let settingRoutineId = null;
+let streakWeekAnchor = '';
 
 // ═══════════════════════════════════════════
 // SETUP FLOW
@@ -704,12 +705,12 @@ function launchApp() {
   document.getElementById('login-screen').classList.remove('active');
   document.getElementById('app').style.display = 'flex';
   viewDate = todayStr();
+  streakWeekAnchor = todayStr();
   updateDateText();
   startListeners();
 }
 
 function navigateDate(dir) {
-  const oldWeek = getWeekOf(viewDate).join(',');
   const d = new Date(viewDate + 'T00:00:00');
   d.setDate(d.getDate() + dir);
   const next = `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;
@@ -717,8 +718,16 @@ function navigateDate(dir) {
   viewDate = next;
   updateDateText();
   subscribeChecks();
-  if (getWeekOf(viewDate).join(',') !== oldWeek) refreshWeekListeners();
   renderContent();
+}
+
+function navigateStreakWeek(dir) {
+  const d = new Date(streakWeekAnchor + 'T00:00:00');
+  d.setDate(d.getDate() + dir * 7);
+  const next = `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;
+  if (next > todayStr()) return;
+  streakWeekAnchor = next;
+  refreshWeekListeners();
 }
 
 function startListeners() {
@@ -754,7 +763,7 @@ function startRoutineListener() {
 }
 
 function startWeekListeners() {
-  getWeekOf(viewDate).forEach(date => {
+  getWeekOf(streakWeekAnchor).forEach(date => {
     const u = col('checks').doc(date).onSnapshot(doc => {
       weekChecks[date] = doc.exists ? (doc.data() || {}) : {};
       rerenderStreak();
@@ -938,17 +947,24 @@ function renderContent() {
 const DAY_MON = ['월','화','수','목','금','토','일'];
 
 function buildStreakHTML() {
-  const dates = getWeekOf(viewDate);
+  const dates = getWeekOf(streakWeekAnchor);
   const tod = todayStr();
   const tabRoutines = routines.filter(r => r.tabId === currentTabId);
   const total = tabRoutines.length;
 
   const streak = calcStreak(currentTabId);
   const streakLabel = streak > 0 ? `🔥 ${streak}일 연속` : '';
-  const isThisWeek = getWeekOf(viewDate).join(',') === getWeekOf(todayStr()).join(',');
-  const weekTitle = isThisWeek ? '📅 이번 주' : `📅 ${dates[0].slice(5).replace('-','/')} ~ ${dates[6].slice(5).replace('-','/')}`;
+  const isThisWeek = getWeekOf(streakWeekAnchor).join(',') === getWeekOf(todayStr()).join(',');
+  const weekTitle = isThisWeek ? '이번 주' : `${dates[0].slice(5).replace('-','/')} ~ ${dates[6].slice(5).replace('-','/')}`;
 
-  let html = `<div class="streak-card"><div class="streak-header"><h3>${weekTitle}</h3>${streakLabel ? `<span class="streak-count">${streakLabel}</span>` : ''}</div><div class="streak-row">`;
+  let html = `<div class="streak-card">
+    <div class="streak-header">
+      <button class="stats-nav-btn" onclick="navigateStreakWeek(-1)" style="margin-right:4px">‹</button>
+      <h3 style="flex:1">📅 ${weekTitle}</h3>
+      ${streakLabel ? `<span class="streak-count">${streakLabel}</span>` : ''}
+      <button class="stats-nav-btn" onclick="navigateStreakWeek(1)" style="margin-left:4px" ${isThisWeek?'disabled':''}>›</button>
+    </div>
+    <div class="streak-row">`;
 
   dates.forEach((date, idx) => {
     const d = new Date(date + 'T00:00:00');
@@ -986,7 +1002,7 @@ function buildStreakHTML() {
 }
 
 function calcStreak(tabId) {
-  const dates = getWeekOf(viewDate);
+  const dates = getWeekOf(streakWeekAnchor);
   const tod = todayStr();
   const tabRoutines = routines.filter(r => r.tabId === tabId);
   if (tabRoutines.length === 0) return 0;
