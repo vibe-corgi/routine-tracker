@@ -421,6 +421,30 @@ body {
 .r-name-clickable { cursor: pointer; }
 .r-name-clickable:hover { color: var(--accent); text-decoration: underline; }
 
+/* ─────────────── MEMO BOX ─────────────── */
+.memo-box {
+  background: var(--card); border-radius: var(--radius);
+  padding: 12px 14px; box-shadow: var(--shadow);
+  border-left: 3px solid #F59E0B;
+}
+.memo-box textarea {
+  width: 100%; border: none; background: transparent;
+  font-size: 14px; color: var(--text); resize: none; outline: none;
+  min-height: 64px; max-height: 200px; font-family: inherit; line-height: 1.65;
+  overflow-y: auto;
+}
+.memo-footer {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 6px; font-size: 11px; color: var(--text-sub);
+}
+.memo-saved { transition: opacity .4s; font-size: 11px; color: var(--success); }
+
+/* all-memos modal */
+.all-memo-item { padding: 14px 0; border-bottom: 1px solid var(--border); }
+.all-memo-item:last-child { border-bottom: none; }
+.all-memo-tab-name { font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+.all-memo-text { font-size: 14px; color: var(--text); line-height: 1.7; white-space: pre-wrap; background: var(--bg); border-radius: 8px; padding: 10px 12px; }
+
 .r-schedule {
   font-size: 10px; color: #7C3AED; background: #EDE9FE;
   border-radius: 6px; padding: 2px 7px; flex-shrink: 0;
@@ -477,6 +501,7 @@ body {
         <button class="date-nav-btn" id="btn-next" onclick="navigateDate(1)">›</button>
       </div>
     </div>
+    <button class="btn-icon" onclick="openAllMemos()" title="메모 모아보기">📝</button>
     <button class="btn-icon" onclick="openSettings()" title="설정">⚙️</button>
   </div>
 
@@ -539,6 +564,17 @@ body {
     <div class="modal-actions">
       <button class="btn btn-primary" onclick="closeModal('settings-modal')">닫기</button>
     </div>
+  </div>
+</div>
+
+<!-- All Memos Modal -->
+<div class="overlay" id="all-memos-modal">
+  <div class="modal" style="max-height:88vh;overflow-y:auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <h2 style="margin-bottom:0">📝 메모 모아보기</h2>
+      <button class="btn-icon" onclick="closeModal('all-memos-modal')">✕</button>
+    </div>
+    <div id="all-memos-content"></div>
   </div>
 </div>
 
@@ -640,6 +676,8 @@ let statsMonthYear = 0;
 let statsMonthMonth = 0;
 let settingRoutineId = null;
 let streakWeekAnchor = '';
+let currentMemo = {};
+let memoDebounce = null;
 
 // ═══════════════════════════════════════════
 // SETUP FLOW
@@ -691,8 +729,10 @@ function openSettings() {
 function logout() {
   if (!confirm('로그아웃 할까요?')) return;
   unsubs.forEach(u => u());
-  unsubs = [];
+  unsubs = []; weekUnsubs.forEach(u => u()); weekUnsubs = [];
   if (routineUnsub) { routineUnsub(); routineUnsub = null; }
+  if (checkUnsub) { checkUnsub(); checkUnsub = null; }
+  currentMemo = {};
   firebase.auth().signOut();
   closeModal('settings-modal');
 }
@@ -901,6 +941,28 @@ function renderContent() {
     }
   }
 
+  // Load memo lazily
+  if (currentMemo[currentTabId] === undefined) {
+    currentMemo[currentTabId] = '';
+    col('memos').doc(currentTabId).get().then(doc => {
+      currentMemo[currentTabId] = doc.exists ? (doc.data().text || '') : '';
+      const el = document.getElementById('tab-memo');
+      if (el && document.activeElement !== el) el.value = currentMemo[currentTabId];
+    });
+  }
+  const memoVal = currentMemo[currentTabId] || '';
+  html += `<div class="memo-box">
+    <textarea id="tab-memo" placeholder="📝 탭 메모를 입력하세요…" oninput="onMemoInput('${tab.id}')">${esc(memoVal)}</textarea>
+    <div class="memo-footer">
+      <span style="font-size:11px;color:var(--text-sub)">메모</span>
+      <span class="memo-saved" id="memo-saved" style="opacity:0">저장됨 ✓</span>
+    </div>
+  </div>`;
+
+  // Preserve memo value if user is typing during re-render
+  const _preserveMemo = document.activeElement?.id === 'tab-memo'
+    ? document.getElementById('tab-memo')?.value : null;
+
   html += `<div class="routine-list ${editMode?'edit-mode':''}">`;
 
   if (tabRoutines.length === 0) {
@@ -942,6 +1004,12 @@ function renderContent() {
 
   html += buildStreakHTML();
   container.innerHTML = html;
+
+  // Restore memo value if user was typing
+  if (_preserveMemo !== null) {
+    const el = document.getElementById('tab-memo');
+    if (el) { el.value = _preserveMemo; el.focus(); }
+  }
 }
 
 // ═══════════════════════════════════════════
@@ -949,12 +1017,14 @@ function renderContent() {
 // ═══════════════════════════════════════════
 const DAY_MON = ['월','화','수','목','금','토','일'];
 
+// Returns routines that existed on a given date (respects createdAt)
+function routinesForDate(tabId, dateStr) {
+  return routines.filter(r => r.tabId === tabId && (!r.createdAt || r.createdAt <= dateStr));
+}
+
 function buildStreakHTML() {
   const dates = getWeekOf(streakWeekAnchor);
   const tod = todayStr();
-  const tabRoutines = routines.filter(r => r.tabId === currentTabId);
-  const total = tabRoutines.length;
-
   const streak = calcStreak(currentTabId);
   const streakLabel = streak > 0 ? `🔥 ${streak}일 연속` : '';
   const isThisWeek = getWeekOf(streakWeekAnchor).join(',') === getWeekOf(todayStr()).join(',');
@@ -971,17 +1041,16 @@ function buildStreakHTML() {
 
   dates.forEach((date, idx) => {
     const d = new Date(date + 'T00:00:00');
-    const dayLabel = DAY_MON[idx];
-    const dateNum = d.getDate();
     const isFuture = date > tod;
     const isToday = date === tod;
     const checks = weekChecks[date] || {};
+    // Only count routines that existed on this date
+    const dateRoutines = routinesForDate(currentTabId, date);
+    const total = dateRoutines.length;
 
-    let cls = 'streak-dot';
-    let content = '';
-
+    let cls = 'streak-dot', content = '';
     if (!isFuture && total > 0) {
-      const cnt = tabRoutines.filter(r => checks[r.id]).length;
+      const cnt = dateRoutines.filter(r => checks[r.id]).length;
       const pct = cnt / total;
       content = cnt > 0 ? String(cnt) : '';
       if (pct === 1) cls += ' full';
@@ -992,11 +1061,10 @@ function buildStreakHTML() {
     if (isToday) cls += ' today';
     if (isFuture) cls += ' future';
 
-    html += `
-      <div class="streak-col">
-        <div class="streak-label" style="font-weight:${isToday?'700':'500'};color:${isToday?'var(--accent)':'var(--text-sub)'}">${dayLabel}</div>
+    html += `<div class="streak-col">
+        <div class="streak-label" style="font-weight:${isToday?'700':'500'};color:${isToday?'var(--accent)':'var(--text-sub)'}">${DAY_MON[idx]}</div>
         <div class="${cls}">${content}</div>
-        <div class="streak-date">${dateNum}</div>
+        <div class="streak-date">${d.getDate()}</div>
       </div>`;
   });
 
@@ -1007,15 +1075,12 @@ function buildStreakHTML() {
 function calcStreak(tabId) {
   const dates = getWeekOf(streakWeekAnchor);
   const tod = todayStr();
-  const tabRoutines = routines.filter(r => r.tabId === tabId);
-  if (tabRoutines.length === 0) return 0;
-
   let streak = 0;
-  const past = dates.filter(d => d <= tod).reverse();
-  for (const date of past) {
+  for (const date of [...dates].filter(d => d <= tod).reverse()) {
+    const dateRoutines = routinesForDate(tabId, date);
+    if (dateRoutines.length === 0) continue; // no routines existed yet — skip
     const checks = weekChecks[date] || {};
-    const allDone = tabRoutines.every(r => checks[r.id]);
-    if (allDone) streak++;
+    if (dateRoutines.every(r => checks[r.id])) streak++;
     else break;
   }
   return streak;
@@ -1109,8 +1174,10 @@ async function deleteTab() {
   const batch = db.batch();
   rSnap.docs.forEach(d => batch.delete(d.ref));
   batch.delete(col('tabs').doc(ctxTab.id));
+  batch.delete(col('memos').doc(ctxTab.id));
   await batch.commit();
 
+  delete currentMemo[ctxTab.id];
   if (currentTabId === ctxTab.id) currentTabId = null;
   toast('탭이 삭제되었습니다');
 }
@@ -1130,7 +1197,7 @@ async function saveRoutine() {
   if (!currentTabId) return;
 
   const n = routines.filter(r => r.tabId === currentTabId).length;
-  await col('routines').add({ name, tabId: currentTabId, order: n });
+  await col('routines').add({ name, tabId: currentTabId, order: n, createdAt: todayStr() });
   closeModal('routine-modal');
   toast('루틴이 추가되었습니다');
 }
@@ -1166,6 +1233,42 @@ async function dragDrop(e, targetId) {
   reordered.forEach((r, i) => batch.update(col('routines').doc(r.id), { order: i }));
   await batch.commit();
   dragSrcId = null;
+}
+
+// ═══════════════════════════════════════════
+// MEMO
+// ═══════════════════════════════════════════
+function onMemoInput(tabId) {
+  const val = document.getElementById('tab-memo')?.value || '';
+  currentMemo[tabId] = val;
+  clearTimeout(memoDebounce);
+  const savedEl = document.getElementById('memo-saved');
+  if (savedEl) savedEl.style.opacity = '0';
+  memoDebounce = setTimeout(async () => {
+    await col('memos').doc(tabId).set({ text: val });
+    const el = document.getElementById('memo-saved');
+    if (el) { el.style.opacity = '1'; setTimeout(() => { el.style.opacity = '0'; }, 2000); }
+  }, 1200);
+}
+
+async function openAllMemos() {
+  document.getElementById('all-memos-content').innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-sub)">로딩 중…</div>';
+  openModal('all-memos-modal');
+  const snap = await col('memos').get();
+  const memoMap = {};
+  snap.docs.forEach(d => { memoMap[d.id] = d.data().text || ''; });
+  let html = '', found = false;
+  tabs.forEach(tab => {
+    const text = memoMap[tab.id] || '';
+    if (!text.trim()) return;
+    found = true;
+    html += `<div class="all-memo-item">
+      <div class="all-memo-tab-name">${tab.emoji||''} ${esc(tab.name)}</div>
+      <div class="all-memo-text">${esc(text)}</div>
+    </div>`;
+  });
+  if (!found) html = '<div style="text-align:center;color:var(--text-sub);padding:32px">아직 메모가 없습니다<br><span style="font-size:12px;margin-top:6px;display:block">탭 화면에서 메모를 작성해 보세요</span></div>';
+  document.getElementById('all-memos-content').innerHTML = html;
 }
 
 function openRoutineSettings(id, name, timeStart, timeEnd) {
@@ -1384,8 +1487,9 @@ function renderStatsContent() {
   const tod = todayStr();
   const routine = routines.find(r => r.id === rid);
 
-  // ── global summary stats (all cached dates) ──
-  const allCachedDates = Object.keys(statsCache).sort().filter(d => d <= tod);
+  // ── global summary stats (all cached dates, from createdAt onwards) ──
+  const createdAt = routine?.createdAt || '2020-01-01';
+  const allCachedDates = Object.keys(statsCache).sort().filter(d => d <= tod && d >= createdAt);
   let maxStreak = 0, cur = 0;
   allCachedDates.forEach(d => {
     if (statsCache[d][rid]) { cur++; if (cur > maxStreak) maxStreak = cur; } else cur = 0;
@@ -1417,18 +1521,19 @@ function renderStatsContent() {
     weekDates.forEach((date, idx) => {
       const isFuture = date > tod;
       const isToday = date === tod;
-      const done = !isFuture && statsCache[date]?.[rid];
+      const beforeStart = date < createdAt;
+      const done = !isFuture && !beforeStart && statsCache[date]?.[rid];
       const d = new Date(date + 'T00:00:00');
-      const cls = ['stats-dot-circle', done?'done':'', isToday?'today':'', isFuture?'future':''].join(' ');
+      const cls = ['stats-dot-circle', done?'done':'', isToday?'today':'', (isFuture||beforeStart)?'future':''].join(' ');
       html += `<div class="stats-dot">
         <div class="stats-dot-lbl" style="font-weight:${isToday?700:500};color:${isToday?'var(--accent)':'var(--text-sub)'}">${DAY_MON[idx]}</div>
-        <div class="${cls}"></div>
+        <div class="${cls}" title="${beforeStart?'루틴 추가 전':''}"></div>
         <div class="stats-dot-lbl">${d.getDate()}</div>
       </div>`;
     });
     html += '</div>';
 
-    const weekPast = weekDates.filter(d => d <= tod);
+    const weekPast = weekDates.filter(d => d <= tod && d >= createdAt);
     const weekDone = weekPast.filter(d => statsCache[d]?.[rid]).length;
     const weekRate = weekPast.length > 0 ? Math.round(weekDone/weekPast.length*100) : 0;
     const weekTimes = weekPast.filter(d => statsCache[d]?.[rid]).map(d => statsCache[d][rid+'_t']).filter(Boolean);
@@ -1462,13 +1567,15 @@ function renderStatsContent() {
       const dateStr = `${year}-${p2(month)}-${p2(day)}`;
       const isFuture = dateStr > tod;
       const isToday  = dateStr === tod;
-      const done = !isFuture && statsCache[dateStr]?.[rid];
-      const cls = 'cal-day '+(isFuture?'future':done?'done':'miss')+(isToday?' today-cal':'');
-      html += `<div class="${cls}" title="${dateStr}">${day}</div>`;
+      const beforeStart = dateStr < createdAt;
+      const done = !isFuture && !beforeStart && statsCache[dateStr]?.[rid];
+      const cls = 'cal-day '+(isFuture||beforeStart?'future':done?'done':'miss')+(isToday?' today-cal':'');
+      const tip = beforeStart ? '루틴 추가 전' : dateStr;
+      html += `<div class="${cls}" title="${tip}">${day}</div>`;
     }
     html += '</div>';
 
-    const monthPast = getMonthDates(year, month).filter(d => d <= tod);
+    const monthPast = getMonthDates(year, month).filter(d => d <= tod && d >= createdAt);
     const monthDone = monthPast.filter(d => statsCache[d]?.[rid]).length;
     const monthRate = monthPast.length > 0 ? Math.round(monthDone/monthPast.length*100) : 0;
     const monthTimes = monthPast.filter(d => statsCache[d]?.[rid]).map(d => statsCache[d][rid+'_t']).filter(Boolean);
@@ -1534,8 +1641,11 @@ async function openTabStats(tab) {
   }));
 
   const rRatio = (date, r) => tc[date]?.[r.id] ? 1 : 0;
-  const tabRatio = (date) => tabRoutines.length > 0
-    ? tabRoutines.reduce((s,r) => s+rRatio(date,r), 0) / tabRoutines.length : 0;
+  // Only count routines that existed on the given date (createdAt filter)
+  const tabRatio = (date) => {
+    const rs = tabRoutines.filter(r => !r.createdAt || r.createdAt <= date);
+    return rs.length > 0 ? rs.reduce((s,r) => s+rRatio(date,r), 0) / rs.length : null;
+  };
 
   let html = '';
 
@@ -1553,12 +1663,13 @@ async function openTabStats(tab) {
     const ds = `${cy}-${p2(cm)}-${p2(day)}`;
     const isFuture = ds > tod, isToday = ds === tod;
     const ratio = !isFuture ? tabRatio(ds) : -1;
-    const [bg,fg] = ratio<0 ? ['var(--border)','var(--text-sub)']
+    // null = no routines existed yet on this date → treat same as future (no data)
+    const [bg,fg] = (ratio===null||ratio<0) ? ['var(--border)','var(--text-sub)']
       : ratio===0 ? ['#F3F4F6','#9CA3AF']
       : ratio<0.5 ? ['#A7F3D0','#065F46']
       : ratio<1   ? ['#34D399','#064E3B']
       :              ['#10B981','white'];
-    const cnt = ratio>=0 ? tabRoutines.filter(r=>tc[ds]?.[r.id]).length : 0;
+    const cnt = (ratio!==null&&ratio>=0) ? tabRoutines.filter(r=>(!r.createdAt||r.createdAt<=ds)&&tc[ds]?.[r.id]).length : 0;
     html += `<div class="cal-day" style="background:${bg};color:${fg};opacity:${isFuture?.4:1}${isToday?';outline:2px solid var(--accent);outline-offset:-1px':''}" title="${cnt}/${tabRoutines.length}">${day}</div>`;
   }
   html += `</div></div>`;
@@ -1566,9 +1677,11 @@ async function openTabStats(tab) {
   // ═══ 2. WEEKDAY PATTERN ═══
   const wdAcc = Array(7).fill(null).map(()=>({sum:0,cnt:0}));
   dates60.filter(d=>d<=tod).forEach(ds => {
+    const ratio = tabRatio(ds);
+    if (ratio === null) return; // no routines existed yet
     const dow = new Date(ds+'T00:00:00').getDay();
     const idx = dow===0 ? 6 : dow-1;
-    wdAcc[idx].sum += tabRatio(ds);
+    wdAcc[idx].sum += ratio;
     wdAcc[idx].cnt++;
   });
   const wdRates = wdAcc.map(w => w.cnt>0 ? w.sum/w.cnt : 0);
@@ -1600,7 +1713,8 @@ async function openTabStats(tab) {
     const anchorStr = `${anchor.getFullYear()}-${p2(anchor.getMonth()+1)}-${p2(anchor.getDate())}`;
     const wDates = getWeekOf(anchorStr);
     const past = wDates.filter(d => d<=tod && tc[d]!==undefined);
-    const rate = past.length>0 ? past.reduce((s,d)=>s+tabRatio(d),0)/past.length : 0;
+    const validPast = past.filter(d => tabRatio(d) !== null);
+    const rate = validPast.length>0 ? validPast.reduce((s,d)=>s+tabRatio(d),0)/validPast.length : 0;
     const wStart = new Date(wDates[0]+'T00:00:00');
     return { label:`${wStart.getMonth()+1}/${wStart.getDate()}`, rate, past, isThis: w===7 };
   });
@@ -1626,8 +1740,9 @@ async function openTabStats(tab) {
   // ═══ 4. BEST / WORST ═══
   const monthDs = dates60.filter(d=>d.startsWith(`${cy}-${p2(cm)}`)&&d<=tod);
   const ranked = tabRoutines.map(r => {
-    const done = monthDs.filter(d=>tc[d]?.[r.id]).length;
-    return { r, pct: monthDs.length>0 ? Math.round(done/monthDs.length*100) : 0 };
+    const validDs = monthDs.filter(d => !r.createdAt || r.createdAt <= d);
+    const done = validDs.filter(d=>tc[d]?.[r.id]).length;
+    return { r, pct: validDs.length>0 ? Math.round(done/validDs.length*100) : 0 };
   }).sort((a,b)=>b.pct-a.pct);
 
   html += `<div class="ts-section" style="border-bottom:none">
