@@ -457,6 +457,29 @@ body {
 }
 .memo-saved { transition: opacity .4s; font-size: 11px; color: var(--success); }
 
+/* tab fixed memo */
+.tab-fixed-memo {
+  background: var(--card); border-radius: var(--radius);
+  padding: 10px 14px; box-shadow: var(--shadow);
+  border-left: 3px solid #A78BFA;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.tab-fixed-memo-header {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 11px; color: var(--text-sub);
+}
+.tab-fixed-memo textarea {
+  width: 100%; border: none; background: transparent;
+  font-size: 14px; color: var(--text); resize: none; outline: none;
+  min-height: 40px; max-height: 200px; font-family: inherit; line-height: 1.65;
+  overflow-y: auto;
+}
+.tab-fixed-memo-del {
+  background: none; border: none; cursor: pointer; font-size: 12px;
+  color: var(--text-sub); padding: 0 2px;
+}
+.tab-fixed-memo-del:hover { color: var(--danger); }
+
 /* all-memos modal */
 .memo-view-nav { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
 .all-memo-item { padding: 14px 0; border-bottom: 1px solid var(--border); }
@@ -962,6 +985,15 @@ function renderContent() {
         <button class="btn-icon" onclick="showCtxMenuByBtn(event, ${tabs.indexOf(tab)})" title="탭 옵션">⋯</button>
       </div>
     </div>
+    <div class="tab-fixed-memo">
+      <div class="tab-fixed-memo-header">
+        <span>📌 탭 메모 (고정)</span>
+        <button class="tab-fixed-memo-del" onclick="clearTabFixedMemo('${tab.id}')" title="메모 삭제">✕</button>
+      </div>
+      <textarea id="tab-fixed-memo-${tab.id}" placeholder="이 탭에 대한 고정 메모를 입력하세요…"
+        oninput="onTabFixedMemoInput('${tab.id}')"
+      >${esc(tab.tabMemo || '')}</textarea>
+    </div>
   `;
 
   if (total > 0) {
@@ -1323,6 +1355,28 @@ function onMemoInput(tabId) {
     const el = document.getElementById('memo-saved');
     if (el) { el.style.opacity = '1'; setTimeout(() => { el.style.opacity = '0'; }, 2000); }
   }, 1200);
+}
+
+let tabFixedMemoDebounces = {};
+function onTabFixedMemoInput(tabId) {
+  const el = document.getElementById('tab-fixed-memo-' + tabId);
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
+  const val = el.value;
+  const t = tabs.find(t => t.id === tabId);
+  if (t) t.tabMemo = val;
+  clearTimeout(tabFixedMemoDebounces[tabId]);
+  tabFixedMemoDebounces[tabId] = setTimeout(async () => {
+    await col('tabs').doc(tabId).update({ tabMemo: val || firebase.firestore.FieldValue.delete() });
+  }, 1000);
+}
+async function clearTabFixedMemo(tabId) {
+  const el = document.getElementById('tab-fixed-memo-' + tabId);
+  if (el) el.value = '';
+  const t = tabs.find(t => t.id === tabId);
+  if (t) t.tabMemo = '';
+  await col('tabs').doc(tabId).update({ tabMemo: firebase.firestore.FieldValue.delete() });
 }
 
 let routineMemoDebounces = {};
