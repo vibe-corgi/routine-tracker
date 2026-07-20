@@ -445,6 +445,7 @@ body {
 .memo-saved { transition: opacity .4s; font-size: 11px; color: var(--success); }
 
 /* all-memos modal */
+.memo-view-nav { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
 .all-memo-item { padding: 14px 0; border-bottom: 1px solid var(--border); }
 .all-memo-item:last-child { border-bottom: none; }
 .all-memo-tab-name { font-size: 13px; font-weight: 700; margin-bottom: 6px; }
@@ -583,10 +584,15 @@ body {
 
 <!-- All Memos Modal -->
 <div class="overlay" id="all-memos-modal">
-  <div class="modal" style="max-height:88vh;overflow-y:auto">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+  <div class="modal" style="max-height:90vh;overflow-y:auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
       <h2 style="margin-bottom:0">📝 메모 모아보기</h2>
       <button class="btn-icon" onclick="closeModal('all-memos-modal')">✕</button>
+    </div>
+    <div class="stats-tab-row" style="margin-bottom:14px">
+      <button class="stats-tab-btn active" id="mv-today" onclick="switchMemoView('today')">오늘</button>
+      <button class="stats-tab-btn" id="mv-week"  onclick="switchMemoView('week')">주간</button>
+      <button class="stats-tab-btn" id="mv-month" onclick="switchMemoView('month')">월간</button>
     </div>
     <div id="all-memos-content"></div>
   </div>
@@ -690,8 +696,13 @@ let statsMonthYear = 0;
 let statsMonthMonth = 0;
 let settingRoutineId = null;
 let streakWeekAnchor = '';
-let currentMemo = {};
+let memoCache = {};        // { date: { tabId: text } }
 let memoDebounce = null;
+let memoViewMode = 'today';
+let memoNavDay = '';
+let memoNavWeek = '';
+let memoNavYear = 0;
+let memoNavMonth = 0;
 
 // ═══════════════════════════════════════════
 // SETUP FLOW
@@ -746,7 +757,7 @@ function logout() {
   unsubs = []; weekUnsubs.forEach(u => u()); weekUnsubs = [];
   if (routineUnsub) { routineUnsub(); routineUnsub = null; }
   if (checkUnsub) { checkUnsub(); checkUnsub = null; }
-  currentMemo = {};
+  memoCache = {};
   firebase.auth().signOut();
   closeModal('settings-modal');
 }
@@ -962,20 +973,21 @@ function renderContent() {
     }
   }
 
-  // Load memo lazily
-  if (currentMemo[currentTabId] === undefined) {
-    currentMemo[currentTabId] = '';
-    col('memos').doc(currentTabId).get().then(doc => {
-      currentMemo[currentTabId] = doc.exists ? (doc.data().text || '') : '';
+  // Load daily memo lazily (keyed by date)
+  if (memoCache[viewDate] === undefined) {
+    memoCache[viewDate] = {};
+    col('dailyMemos').doc(viewDate).get().then(doc => {
+      memoCache[viewDate] = doc.exists ? (doc.data() || {}) : {};
       const el = document.getElementById('tab-memo');
-      if (el && document.activeElement !== el) el.value = currentMemo[currentTabId];
+      if (el && document.activeElement !== el) el.value = memoCache[viewDate][tab.id] || '';
     });
   }
-  const memoVal = currentMemo[currentTabId] || '';
+  const memoVal = (memoCache[viewDate] || {})[tab.id] || '';
+  const isToday = viewDate === todayStr();
   html += `<div class="memo-box">
-    <textarea id="tab-memo" placeholder="📝 탭 메모를 입력하세요…" oninput="onMemoInput('${tab.id}')">${esc(memoVal)}</textarea>
+    <textarea id="tab-memo" placeholder="📝 ${isToday ? '오늘' : viewDate.slice(5).replace('-','/')} 메모…" oninput="onMemoInput('${tab.id}')">${esc(memoVal)}</textarea>
     <div class="memo-footer">
-      <span style="font-size:11px;color:var(--text-sub)">메모</span>
+      <span style="font-size:11px;color:var(--text-sub)">${isToday ? '오늘' : viewDate.slice(5).replace('-','/')} 메모</span>
       <span class="memo-saved" id="memo-saved" style="opacity:0">저장됨 ✓</span>
     </div>
   </div>`;
@@ -1208,7 +1220,7 @@ async function deleteTab() {
   batch.delete(col('memos').doc(ctxTab.id));
   await batch.commit();
 
-  delete currentMemo[ctxTab.id];
+  // memoCache is date-keyed; no per-tab cleanup needed
   if (currentTabId === ctxTab.id) currentTabId = null;
   toast('탭이 삭제되었습니다');
 }
@@ -1271,35 +1283,163 @@ async function dragDrop(e, targetId) {
 // ═══════════════════════════════════════════
 function onMemoInput(tabId) {
   const val = document.getElementById('tab-memo')?.value || '';
-  currentMemo[tabId] = val;
+  if (!memoCache[viewDate]) memoCache[viewDate] = {};
+  memoCache[viewDate][tabId] = val;
   clearTimeout(memoDebounce);
   const savedEl = document.getElementById('memo-saved');
   if (savedEl) savedEl.style.opacity = '0';
   memoDebounce = setTimeout(async () => {
-    await col('memos').doc(tabId).set({ text: val });
+    await col('dailyMemos').doc(viewDate).set({ [tabId]: val }, { merge: true });
     const el = document.getElementById('memo-saved');
     if (el) { el.style.opacity = '1'; setTimeout(() => { el.style.opacity = '0'; }, 2000); }
   }, 1200);
 }
 
-async function openAllMemos() {
-  document.getElementById('all-memos-content').innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-sub)">로딩 중…</div>';
+// ── All Memos Modal ──────────────────────────
+function openAllMemos() {
+  const tod = todayStr();
+  memoNavDay  = tod;
+  memoNavWeek = tod;
+  const [y, m] = tod.split('-').map(Number);
+  memoNavYear = y; memoNavMonth = m;
+  memoViewMode = 'today';
   openModal('all-memos-modal');
-  const snap = await col('memos').get();
-  const memoMap = {};
-  snap.docs.forEach(d => { memoMap[d.id] = d.data().text || ''; });
-  let html = '', found = false;
-  tabs.forEach(tab => {
-    const text = memoMap[tab.id] || '';
-    if (!text.trim()) return;
-    found = true;
-    html += `<div class="all-memo-item">
-      <div class="all-memo-tab-name">${tab.emoji||''} ${esc(tab.name)}</div>
-      <div class="all-memo-text">${esc(text)}</div>
-    </div>`;
+  renderAllMemos();
+}
+
+function switchMemoView(mode) {
+  memoViewMode = mode;
+  ['today','week','month'].forEach(m => {
+    document.getElementById('mv-'+m)?.classList.toggle('active', m === mode);
   });
-  if (!found) html = '<div style="text-align:center;color:var(--text-sub);padding:32px">아직 메모가 없습니다<br><span style="font-size:12px;margin-top:6px;display:block">탭 화면에서 메모를 작성해 보세요</span></div>';
-  document.getElementById('all-memos-content').innerHTML = html;
+  renderAllMemos();
+}
+
+async function memoNavStep(dir) {
+  if (memoViewMode === 'today') {
+    const d = new Date(memoNavDay + 'T00:00:00');
+    d.setDate(d.getDate() + dir);
+    const next = `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;
+    if (next > todayStr()) return;
+    memoNavDay = next;
+  } else if (memoViewMode === 'week') {
+    const d = new Date(memoNavWeek + 'T00:00:00');
+    d.setDate(d.getDate() + dir * 7);
+    const next = `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;
+    if (next > todayStr()) return;
+    memoNavWeek = next;
+  } else {
+    memoNavMonth += dir;
+    if (memoNavMonth > 12) { memoNavMonth = 1; memoNavYear++; }
+    if (memoNavMonth < 1)  { memoNavMonth = 12; memoNavYear--; }
+    const [cy, cm] = todayStr().split('-').map(Number);
+    if (memoNavYear > cy || (memoNavYear === cy && memoNavMonth > cm)) {
+      memoNavYear = cy; memoNavMonth = cm;
+      return;
+    }
+  }
+  renderAllMemos();
+}
+
+async function renderAllMemos() {
+  const content = document.getElementById('all-memos-content');
+  content.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-sub)">로딩 중…</div>';
+
+  const tod = todayStr();
+  let datesToLoad = [];
+
+  if (memoViewMode === 'today') {
+    datesToLoad = [memoNavDay];
+  } else if (memoViewMode === 'week') {
+    datesToLoad = getWeekOf(memoNavWeek).filter(d => d <= tod);
+  } else {
+    datesToLoad = getMonthDates(memoNavYear, memoNavMonth).filter(d => d <= tod);
+  }
+
+  // Load uncached dates
+  await Promise.all(datesToLoad.filter(d => !memoCache[d]).map(async d => {
+    const doc = await col('dailyMemos').doc(d).get();
+    memoCache[d] = doc.exists ? (doc.data() || {}) : {};
+  }));
+
+  // ── nav bar ──
+  const [cy, cm] = tod.split('-').map(Number);
+  let navLabel = '', atLatest = false;
+  if (memoViewMode === 'today') {
+    const d = new Date(memoNavDay + 'T00:00:00');
+    navLabel = memoNavDay === tod ? '오늘' : `${d.getMonth()+1}/${d.getDate()}(${DAY_KO[d.getDay()]})`;
+    atLatest = memoNavDay === tod;
+  } else if (memoViewMode === 'week') {
+    const wk = getWeekOf(memoNavWeek);
+    const ws = new Date(wk[0]+'T00:00:00'), we = new Date(wk[6]+'T00:00:00');
+    const isThisWeek = getWeekOf(memoNavWeek).join(',') === getWeekOf(tod).join(',');
+    navLabel = isThisWeek ? '이번 주' : `${ws.getMonth()+1}/${ws.getDate()} ~ ${we.getMonth()+1}/${we.getDate()}`;
+    atLatest = isThisWeek;
+  } else {
+    navLabel = `${memoNavYear}년 ${memoNavMonth}월`;
+    atLatest = memoNavYear === cy && memoNavMonth === cm;
+  }
+
+  let html = `<div class="memo-view-nav">
+    <button class="stats-nav-btn" onclick="memoNavStep(-1)">‹</button>
+    <span style="font-size:14px;font-weight:700">${navLabel}</span>
+    <button class="stats-nav-btn" onclick="memoNavStep(1)" ${atLatest?'disabled':''}>›</button>
+  </div>`;
+
+  // ── content ──
+  if (memoViewMode === 'today') {
+    html += renderMemoDayBlock(memoNavDay, true);
+  } else if (memoViewMode === 'week') {
+    const wk = getWeekOf(memoNavWeek).filter(d => d <= tod).reverse();
+    let found = false;
+    wk.forEach(date => {
+      const block = renderMemoDayBlock(date, false);
+      if (block) { html += block; found = true; }
+    });
+    if (!found) html += emptyMemoMsg();
+  } else {
+    const days = getMonthDates(memoNavYear, memoNavMonth).filter(d => d <= tod).reverse();
+    let found = false;
+    days.forEach(date => {
+      const block = renderMemoDayBlock(date, false);
+      if (block) { html += block; found = true; }
+    });
+    if (!found) html += emptyMemoMsg();
+  }
+
+  content.innerHTML = html;
+}
+
+function renderMemoDayBlock(date, showEmpty) {
+  const dayData = memoCache[date] || {};
+  const d = new Date(date + 'T00:00:00');
+  const isToday = date === todayStr();
+  const dayLabel = isToday ? '오늘' : `${d.getMonth()+1}/${d.getDate()}(${DAY_KO[d.getDay()]})`;
+
+  const entries = tabs
+    .map(tab => ({ tab, text: (dayData[tab.id] || '').trim() }))
+    .filter(e => e.text);
+
+  if (!showEmpty && entries.length === 0) return '';
+
+  let html = `<div class="all-memo-item">
+    <div style="font-size:11px;font-weight:700;color:var(--text-sub);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">${dayLabel}</div>`;
+
+  if (entries.length === 0) {
+    html += `<div style="font-size:13px;color:var(--text-sub);font-style:italic">메모 없음</div>`;
+  } else {
+    entries.forEach(({ tab, text }) => {
+      html += `<div style="margin-bottom:10px">
+        <div class="all-memo-tab-name">${tab.emoji||''} ${esc(tab.name)}</div>
+        <div class="all-memo-text">${esc(text)}</div>
+      </div>`;
+    });
+  }
+  return html + '</div>';
+}
+
+function emptyMemoMsg() {
+  return '<div style="text-align:center;color:var(--text-sub);padding:32px 16px">이 기간에 작성된 메모가 없습니다</div>';
 }
 
 function openRoutineSettings(id, name, timeStart, timeEnd) {
