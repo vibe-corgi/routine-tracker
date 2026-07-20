@@ -507,8 +507,10 @@ body {
         <button class="date-nav-btn" id="btn-next" onclick="navigateDate(1)">›</button>
       </div>
     </div>
-    <button class="btn-icon" onclick="openAllMemos()" title="메모 모아보기">📝</button>
-    <button class="btn-icon" onclick="openSettings()" title="설정">⚙️</button>
+    <div style="display:flex;gap:4px;align-items:center">
+      <button class="btn-icon" onclick="openAllMemos()" title="메모 모아보기">📝</button>
+      <button class="btn-icon" onclick="openSettings()" title="설정">⚙️</button>
+    </div>
   </div>
 
   <div id="tab-bar">
@@ -942,8 +944,8 @@ function renderContent() {
         ${tabTimeBadge}
       </div>
       <div class="tab-header-actions">
-        <button class="btn-icon" onclick="openTabStatsAt(${tabs.indexOf(tab)})" title="탭 통계">📊</button>
         <button class="btn-icon" onclick="toggleEditMode()" title="${editMode?'편집 완료':'루틴 편집'}">${editMode?'✅':'✏️'}</button>
+        <button class="btn-icon" onclick="openTabStatsAt(${tabs.indexOf(tab)})" title="탭 통계">📊</button>
         <button class="btn-icon" onclick="showCtxMenuByBtn(event, ${tabs.indexOf(tab)})" title="탭 옵션">⋯</button>
       </div>
     </div>
