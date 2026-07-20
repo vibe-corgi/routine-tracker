@@ -947,7 +947,8 @@ function updateDateText() {
 // RENDER TABS
 // ═══════════════════════════════════════════
 function renderTabs() {
-  const bar = document.getElementById('tab-scroll');
+  const bar = document.getElementById('tab-scroll') || document.getElementById('tab-bar');
+  if (!bar) return;
   bar.querySelectorAll('.tab-btn').forEach(el => el.remove());
 
   tabs.forEach(tab => {

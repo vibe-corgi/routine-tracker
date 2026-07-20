@@ -1,7 +1,5 @@
-const CACHE = 'routine-tracker-v3';
+const CACHE = 'routine-tracker-v4';
 const ASSETS = [
-  '/routine-tracker/',
-  '/routine-tracker/index.html',
   '/routine-tracker/manifest.json',
   '/routine-tracker/icon-192.png',
   '/routine-tracker/icon-512.png'
@@ -23,15 +21,9 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   if (e.request.url.includes('firestore') || e.request.url.includes('firebase')) return;
-  // HTML은 항상 네트워크 우선 (최신 코드 보장)
-  if (e.request.mode === 'navigate') {
-    e.respondWith(
-      fetch(e.request).then(res => {
-        const clone = res.clone();
-        caches.open(CACHE).then(c => c.put(e.request, clone));
-        return res;
-      }).catch(() => caches.match(e.request))
-    );
+  // HTML/JS는 항상 네트워크 우선
+  if (e.request.mode === 'navigate' || e.request.url.endsWith('.html') || e.request.url.endsWith('.js')) {
+    e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
     return;
   }
   e.respondWith(
