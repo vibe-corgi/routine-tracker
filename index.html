@@ -413,6 +413,11 @@ body {
 
 .ts-section { padding-bottom: 18px; margin-bottom: 18px; border-bottom: 1px solid var(--border); }
 .ts-title { font-size: 12px; font-weight: 700; color: var(--text-sub); letter-spacing: .4px; margin-bottom: 12px; text-transform: uppercase; }
+
+.time-stat-card { background: var(--bg); border-radius: 10px; padding: 10px 12px; }
+.time-stat-label { font-size: 11px; color: var(--text-sub); margin-bottom: 4px; font-weight: 600; }
+.time-stat-val { font-size: 18px; font-weight: 800; font-family: 'Courier New', monospace; }
+.time-stat-sub { font-size: 11px; margin-top: 3px; font-weight: 600; }
 .tab-stats-name { flex: 1; font-size: 14px; font-weight: 500; }
 .tab-stats-bar-wrap { width: 80px; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
 .tab-stats-bar { height: 100%; background: var(--success); border-radius: 3px; }
@@ -529,6 +534,15 @@ body {
     <div class="fg">
       <label>색상</label>
       <div class="color-row" id="color-row"></div>
+    </div>
+    <div class="fg">
+      <label>탭 실행 예정 시간 <span style="font-weight:400;color:var(--text-sub)">(선택)</span></label>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="time" id="tab-time-start" style="flex:1;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;outline:none;background:#FAFAFA;color:var(--text);font-family:inherit" />
+        <span style="color:var(--text-sub);font-size:16px">~</span>
+        <input type="time" id="tab-time-end" style="flex:1;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;outline:none;background:#FAFAFA;color:var(--text);font-family:inherit" />
+      </div>
+      <div style="font-size:11px;color:var(--text-sub);margin-top:5px;line-height:1.5">탭 전체를 실행할 목표 시간대 — 통계에서 준수율을 확인할 수 있어요</div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('tab-modal')">취소</button>
@@ -906,9 +920,16 @@ function renderContent() {
   const pct = total > 0 ? Math.round(checked/total*100) : 0;
   const color = tab.color || '#4F46E5';
 
+  const tabTimeBadge = tab.tabTimeStart
+    ? `<span style="font-size:10px;background:#EDE9FE;color:#7C3AED;border-radius:6px;padding:2px 8px;font-weight:600;margin-left:6px;font-family:'Courier New',monospace">${tab.tabTimeStart}${tab.tabTimeEnd?'~'+tab.tabTimeEnd:''}</span>`
+    : '';
+
   let html = `
     <div class="tab-header">
-      <h2 style="color:${color}">${tab.emoji||''} ${esc(tab.name)}</h2>
+      <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px">
+        <h2 style="color:${color}">${tab.emoji||''} ${esc(tab.name)}</h2>
+        ${tabTimeBadge}
+      </div>
       <div class="tab-header-actions">
         <button class="btn-icon" onclick="toggleEditMode()" title="${editMode?'편집 완료':'루틴 편집'}">${editMode?'✅':'✏️'}</button>
         <button class="btn-icon" onclick="showCtxMenuByBtn(event, ${tabs.indexOf(tab)})" title="탭 옵션">⋯</button>
@@ -1129,16 +1150,6 @@ function toggleEditMode() {
 // ═══════════════════════════════════════════
 // TAB CRUD
 // ═══════════════════════════════════════════
-function openAddTab() {
-  editTabId = null;
-  selEmoji = '☀️'; selColor = '#4F46E5';
-  document.getElementById('tab-modal-title').textContent = '탭 추가';
-  document.getElementById('tab-name').value = '';
-  updatePickers();
-  openModal('tab-modal');
-  setTimeout(() => document.getElementById('tab-name').focus(), 80);
-}
-
 function openEditTab() {
   if (!ctxTab) return;
   editTabId = ctxTab.id;
@@ -1146,6 +1157,20 @@ function openEditTab() {
   selColor = ctxTab.color || '#4F46E5';
   document.getElementById('tab-modal-title').textContent = '탭 편집';
   document.getElementById('tab-name').value = ctxTab.name;
+  document.getElementById('tab-time-start').value = ctxTab.tabTimeStart || '';
+  document.getElementById('tab-time-end').value = ctxTab.tabTimeEnd || '';
+  updatePickers();
+  openModal('tab-modal');
+  setTimeout(() => document.getElementById('tab-name').focus(), 80);
+}
+
+function openAddTab() {
+  editTabId = null;
+  selEmoji = '☀️'; selColor = '#4F46E5';
+  document.getElementById('tab-modal-title').textContent = '탭 추가';
+  document.getElementById('tab-name').value = '';
+  document.getElementById('tab-time-start').value = '';
+  document.getElementById('tab-time-end').value = '';
   updatePickers();
   openModal('tab-modal');
   setTimeout(() => document.getElementById('tab-name').focus(), 80);
@@ -1154,12 +1179,18 @@ function openEditTab() {
 async function saveTab() {
   const name = document.getElementById('tab-name').value.trim();
   if (!name) { toast('탭 이름을 입력하세요'); return; }
+  const tabTimeStart = document.getElementById('tab-time-start').value;
+  const tabTimeEnd   = document.getElementById('tab-time-end').value;
+
+  const data = { name, emoji: selEmoji, color: selColor };
+  data.tabTimeStart = tabTimeStart || firebase.firestore.FieldValue.delete();
+  data.tabTimeEnd   = tabTimeEnd   || firebase.firestore.FieldValue.delete();
 
   if (editTabId) {
-    await col('tabs').doc(editTabId).update({ name, emoji: selEmoji, color: selColor });
+    await col('tabs').doc(editTabId).update(data);
     toast('탭이 수정되었습니다');
   } else {
-    const ref = await col('tabs').add({ name, emoji: selEmoji, color: selColor, order: tabs.length });
+    const ref = await col('tabs').add({ ...data, order: tabs.length });
     currentTabId = ref.id;
     toast('탭이 추가되었습니다');
   }
@@ -1745,7 +1776,7 @@ async function openTabStats(tab) {
     return { r, pct: validDs.length>0 ? Math.round(done/validDs.length*100) : 0 };
   }).sort((a,b)=>b.pct-a.pct);
 
-  html += `<div class="ts-section" style="border-bottom:none">
+  html += `<div class="ts-section">
     <div class="ts-title">🏆 이번 달 루틴 순위</div>`;
   const medals = ['🥇','🥈','🥉'];
   ranked.forEach((item,i) => {
@@ -1759,6 +1790,120 @@ async function openTabStats(tab) {
     </div>`;
   });
   html += `</div>`;
+
+  // ═══ 5. TAB TIME ANALYSIS (only if tabTimeStart set) ═══
+  if (tab.tabTimeStart) {
+    const schStart = timeToMins(tab.tabTimeStart);
+    const schEnd   = tab.tabTimeEnd ? timeToMins(tab.tabTimeEnd) : null;
+    const schDur   = schEnd ? schEnd - schStart : null;
+
+    // For each date with at least one check, compute session start/end/duration
+    const sessions = [];
+    dates60.filter(d => d <= tod).forEach(date => {
+      const rs = tabRoutines.filter(r => !r.createdAt || r.createdAt <= date);
+      const times = rs.map(r => tc[date]?.[r.id + '_t']).filter(Boolean).map(timeToMins);
+      if (times.length === 0) return;
+      const first = Math.min(...times), last = Math.max(...times);
+      sessions.push({ date, first, last, dur: last - first });
+    });
+
+    if (sessions.length > 0) {
+      const avgFirst = Math.round(sessions.reduce((s,x)=>s+x.first,0)/sessions.length);
+      const avgLast  = schEnd ? Math.round(sessions.reduce((s,x)=>s+x.last,0)/sessions.length) : null;
+      const avgDur   = Math.round(sessions.reduce((s,x)=>s+x.dur,0)/sessions.length);
+
+      const startDiff  = avgFirst - schStart;
+      const startLabel = startDiff === 0 ? '정시 시작' : startDiff > 0 ? `${startDiff}분 늦게 시작` : `${-startDiff}분 일찍 시작`;
+      const startColor = startDiff <= 0 ? 'var(--success)' : startDiff <= 10 ? '#F59E0B' : 'var(--danger)';
+
+      const onTimeStart = sessions.filter(x => x.first <= schStart + 10).length;
+      const startRate   = Math.round(onTimeStart / sessions.length * 100);
+
+      let endBlock = '';
+      if (schEnd && avgLast !== null) {
+        const endDiff  = avgLast - schEnd;
+        const endLabel = endDiff <= 0 ? '목표 시간 내 완료' : `${endDiff}분 초과`;
+        const endColor = endDiff <= 0 ? 'var(--success)' : endDiff <= 10 ? '#F59E0B' : 'var(--danger)';
+        const onTimeEnd = sessions.filter(x => x.last <= schEnd + 5).length;
+        const endRate   = Math.round(onTimeEnd / sessions.length * 100);
+        endBlock = `
+          <div class="time-stat-card">
+            <div class="time-stat-label">평균 종료</div>
+            <div class="time-stat-val" style="color:${endColor}">${minsToTime(avgLast)}</div>
+            <div class="time-stat-sub" style="color:${endColor}">${endLabel}</div>
+          </div>
+          <div class="time-stat-card">
+            <div class="time-stat-label">제시간 완료율</div>
+            <div class="time-stat-val" style="color:${endRate>=80?'var(--success)':endRate>=50?'#F59E0B':'var(--danger)'}">${endRate}%</div>
+            <div class="time-stat-sub">${onTimeEnd}/${sessions.length}일</div>
+          </div>`;
+      }
+
+      const durLabel = schDur
+        ? (avgDur <= schDur ? `목표보다 ${schDur - avgDur}분 빠름` : `목표보다 ${avgDur - schDur}분 초과`)
+        : `평균 ${avgDur}분`;
+      const durColor = schDur ? (avgDur <= schDur ? 'var(--success)' : '#F59E0B') : 'var(--text)';
+
+      // Last 7 days detail
+      const last7 = sessions.slice(-7);
+      let detailRows = '';
+      last7.forEach(s => {
+        const d = new Date(s.date+'T00:00:00');
+        const lbl = `${d.getMonth()+1}/${d.getDate()}(${DAY_KO[d.getDay()]})`;
+        const late = s.first - schStart;
+        const lateColor = late <= 0 ? 'var(--success)' : late <= 10 ? '#F59E0B' : 'var(--danger)';
+        const lateTxt = late <= 0 ? `${-late}분 일찍` : `${late}분 늦게`;
+        detailRows += `<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px">
+          <span style="color:var(--text-sub)">${lbl}</span>
+          <span style="font-family:'Courier New',monospace">${minsToTime(s.first)}${s.last!==s.first?' ~ '+minsToTime(s.last):''}</span>
+          <span style="color:${lateColor};font-size:12px;font-weight:600">${lateTxt}</span>
+        </div>`;
+      });
+
+      html += `<div class="ts-section" style="border-bottom:none">
+        <div class="ts-title">⏰ 탭 시간 준수 분석</div>
+        <div style="background:#F5F3FF;border-radius:10px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:8px">
+          <span style="font-size:18px">🎯</span>
+          <div>
+            <div style="font-size:12px;color:#7C3AED;font-weight:600">목표 시간</div>
+            <div style="font-size:14px;font-weight:700;color:#5B21B6">${tab.tabTimeStart}${tab.tabTimeEnd?' ~ '+tab.tabTimeEnd:''}${schDur?' ('+schDur+'분)':''}</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+          <div class="time-stat-card">
+            <div class="time-stat-label">평균 시작</div>
+            <div class="time-stat-val" style="color:${startColor}">${minsToTime(avgFirst)}</div>
+            <div class="time-stat-sub" style="color:${startColor}">${startLabel}</div>
+          </div>
+          <div class="time-stat-card">
+            <div class="time-stat-label">제시간 시작율</div>
+            <div class="time-stat-val" style="color:${startRate>=80?'var(--success)':startRate>=50?'#F59E0B':'var(--danger)'}">${startRate}%</div>
+            <div class="time-stat-sub">${onTimeStart}/${sessions.length}일</div>
+          </div>
+          ${endBlock}
+          <div class="time-stat-card">
+            <div class="time-stat-label">평균 소요시간</div>
+            <div class="time-stat-val" style="color:${durColor}">${avgDur}분</div>
+            <div class="time-stat-sub" style="color:${durColor}">${durLabel}</div>
+          </div>
+        </div>
+        <div style="font-size:12px;font-weight:600;color:var(--text-sub);margin-bottom:4px">최근 7일 상세</div>
+        <div>${detailRows || '<div style="color:var(--text-sub);font-size:13px;padding:8px 0">데이터가 없습니다</div>'}</div>
+      </div>`;
+    } else {
+      html += `<div class="ts-section" style="border-bottom:none">
+        <div class="ts-title">⏰ 탭 시간 준수 분석</div>
+        <div style="background:#F5F3FF;border-radius:10px;padding:10px 14px;margin-bottom:10px;display:flex;align-items:center;gap:8px">
+          <span style="font-size:18px">🎯</span>
+          <div>
+            <div style="font-size:12px;color:#7C3AED;font-weight:600">목표 시간</div>
+            <div style="font-size:14px;font-weight:700;color:#5B21B6">${tab.tabTimeStart}${tab.tabTimeEnd?' ~ '+tab.tabTimeEnd:''}</div>
+          </div>
+        </div>
+        <div style="color:var(--text-sub);font-size:13px;padding:4px 0">루틴 완료 시간을 기록하면 분석 결과가 나타납니다</div>
+      </div>`;
+    }
+  }
 
   document.getElementById('tab-stats-content').innerHTML = html;
 }
