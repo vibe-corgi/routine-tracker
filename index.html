@@ -1,0 +1,1052 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>루틴 트래커</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #F0F2F5;
+  --card: #FFFFFF;
+  --text: #1A1A2E;
+  --text-sub: #6B7280;
+  --border: #E5E7EB;
+  --accent: #4F46E5;
+  --accent-light: #EEF2FF;
+  --success: #10B981;
+  --danger: #EF4444;
+  --radius: 14px;
+  --shadow: 0 2px 10px rgba(0,0,0,0.07);
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Pretendard', 'Segoe UI', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+/* ─────────────── SCREENS ─────────────── */
+.screen {
+  display: none;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  flex-direction: column;
+}
+.screen.active { display: flex; }
+
+.setup-card {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 32px;
+  width: 100%;
+  max-width: 500px;
+  box-shadow: var(--shadow);
+}
+.setup-card h1 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+.setup-card .sub { color: var(--text-sub); font-size: 14px; line-height: 1.6; margin-bottom: 24px; }
+
+/* ─────────────── FORM ─────────────── */
+.fg { margin-bottom: 14px; }
+.fg label { display: block; font-size: 12px; font-weight: 600; color: var(--text-sub); margin-bottom: 5px; text-transform: uppercase; letter-spacing: .5px; }
+.fg input, .fg textarea {
+  width: 100%; padding: 11px 14px;
+  border: 1.5px solid var(--border); border-radius: 10px;
+  font-size: 14px; outline: none; transition: border-color .2s;
+  background: #FAFAFA; color: var(--text); font-family: inherit;
+}
+.fg input:focus, .fg textarea:focus { border-color: var(--accent); background: white; }
+.fg textarea { height: 110px; resize: none; font-size: 12px; font-family: 'Courier New', monospace; line-height: 1.6; }
+
+/* ─────────────── BUTTONS ─────────────── */
+.btn {
+  padding: 11px 20px; border: none; border-radius: 10px;
+  font-size: 14px; font-weight: 600; cursor: pointer;
+  transition: all .2s; font-family: inherit;
+}
+.btn-primary { background: var(--accent); color: white; width: 100%; padding: 13px; font-size: 15px; }
+.btn-primary:hover { background: #4338CA; }
+.btn-ghost { background: transparent; color: var(--text-sub); }
+.btn-ghost:hover { background: var(--border); color: var(--text); }
+.btn-icon {
+  width: 34px; height: 34px; border: none;
+  background: transparent; border-radius: 8px;
+  cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 16px; color: var(--text-sub); transition: background .2s; flex-shrink: 0;
+}
+.btn-icon:hover { background: var(--border); }
+
+.warning-box {
+  background: #FFF7ED; border: 1px solid #FED7AA; border-radius: 10px;
+  padding: 14px; font-size: 12px; color: #92400E; line-height: 1.7;
+  margin-bottom: 18px;
+}
+.warning-box code { background: rgba(0,0,0,.07); padding: 1px 4px; border-radius: 4px; font-size: 11px; }
+
+/* ─────────────── APP LAYOUT ─────────────── */
+#app { display: none; flex-direction: column; min-height: 100vh; max-width: 640px; margin: 0 auto; }
+
+/* ─────────────── HEADER ─────────────── */
+#header {
+  background: var(--card); padding: 14px 18px;
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 10;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+}
+#header h1 { font-size: 17px; font-weight: 700; }
+.date-text { font-size: 12px; color: var(--text-sub); margin-top: 2px; }
+
+/* ─────────────── TAB BAR ─────────────── */
+#tab-bar {
+  background: var(--card); border-bottom: 1px solid var(--border);
+  padding: 0 8px; display: flex; overflow-x: auto; scrollbar-width: none;
+  gap: 2px; align-items: stretch;
+}
+#tab-bar::-webkit-scrollbar { display: none; }
+
+.tab-btn {
+  padding: 13px 15px; border: none; background: transparent;
+  font-size: 14px; font-weight: 500; color: var(--text-sub);
+  cursor: pointer; white-space: nowrap;
+  border-bottom: 2.5px solid transparent; transition: all .2s;
+  font-family: inherit; display: flex; align-items: center; gap: 5px;
+}
+.tab-btn.active { font-weight: 700; }
+.tab-add-btn {
+  padding: 10px 12px; border: none; background: transparent;
+  color: var(--text-sub); cursor: pointer; font-size: 22px;
+  font-family: inherit; flex-shrink: 0; display: flex; align-items: center;
+  margin-left: auto;
+}
+.tab-add-btn:hover { color: var(--accent); }
+
+/* ─────────────── CONTENT ─────────────── */
+#content { flex: 1; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+
+/* ─────────────── TAB HEADER ─────────────── */
+.tab-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 2px;
+}
+.tab-header h2 { font-size: 17px; font-weight: 700; }
+.tab-header-actions { display: flex; gap: 2px; }
+
+/* ─────────────── PROGRESS ─────────────── */
+.progress-card {
+  background: var(--card); border-radius: var(--radius); padding: 14px 16px;
+  box-shadow: var(--shadow);
+}
+.progress-label {
+  font-size: 13px; color: var(--text-sub); margin-bottom: 8px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.progress-label span:last-child { font-weight: 700; font-size: 14px; color: var(--text); }
+.progress-bar { height: 7px; background: var(--border); border-radius: 4px; overflow: hidden; }
+.progress-fill { height: 100%; background: var(--success); border-radius: 4px; transition: width .4s ease; }
+
+/* ─────────────── ROUTINE LIST ─────────────── */
+.routine-list { display: flex; flex-direction: column; gap: 7px; }
+
+.routine-item {
+  background: var(--card); border-radius: 12px;
+  padding: 13px 14px; display: flex; align-items: center; gap: 11px;
+  box-shadow: var(--shadow); transition: opacity .25s, transform .15s;
+  user-select: none;
+}
+.routine-item.checked { opacity: .55; }
+.routine-item:active { transform: scale(.99); }
+
+.r-check {
+  width: 24px; height: 24px; border: 2px solid var(--border);
+  border-radius: 50%; cursor: pointer; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .2s; background: white;
+}
+.r-check.checked { background: var(--success); border-color: var(--success); color: white; }
+.r-check.checked::after { content: '✓'; font-size: 13px; font-weight: 800; }
+.edit-mode .r-check { pointer-events: none; opacity: .5; }
+
+.r-name { flex: 1; font-size: 15px; line-height: 1.4; }
+.routine-item.checked .r-name { text-decoration: line-through; color: var(--text-sub); }
+
+.r-del {
+  width: 28px; height: 28px; border: none; background: #FEE2E2;
+  color: var(--danger); border-radius: 7px; cursor: pointer;
+  font-size: 15px; display: none; align-items: center; justify-content: center;
+  font-weight: 700; flex-shrink: 0;
+}
+.edit-mode .r-del { display: flex; }
+
+.r-time {
+  font-size: 11px; color: var(--text-sub); background: var(--bg);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 3px 8px; cursor: pointer; white-space: nowrap; flex-shrink: 0;
+  font-family: 'Courier New', monospace; display: inline-flex; align-items: center;
+}
+.r-time:hover { border-color: var(--accent); color: var(--accent); }
+.edit-mode .r-time { display: none; }
+
+.r-goal {
+  font-size: 10px; font-weight: 600; color: #8B5CF6;
+  background: #EDE9FE; border-radius: 99px;
+  padding: 2px 7px; white-space: nowrap; flex-shrink: 0; cursor: pointer;
+}
+.r-goal:hover { background: #DDD6FE; }
+
+.r-edit {
+  width: 26px; height: 26px; border: none; background: #EFF6FF;
+  color: #3B82F6; border-radius: 6px; cursor: pointer;
+  font-size: 13px; display: none; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.edit-mode .r-edit { display: flex; }
+
+.r-move {
+  display: none; flex-direction: column; gap: 1px; flex-shrink: 0;
+}
+.edit-mode .r-move { display: flex; }
+.r-move button {
+  width: 22px; height: 18px; border: none; background: var(--bg);
+  border-radius: 4px; cursor: pointer; font-size: 10px; color: var(--text-sub);
+  display: flex; align-items: center; justify-content: center; padding: 0;
+}
+.r-move button:hover { background: var(--border); color: var(--text); }
+
+.add-routine-btn {
+  background: var(--card); border: 1.5px dashed var(--border);
+  border-radius: 12px; padding: 13px 16px; width: 100%;
+  text-align: left; font-size: 14px; color: var(--text-sub);
+  cursor: pointer; font-family: inherit; transition: all .2s;
+}
+.add-routine-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
+
+/* ─────────────── STREAK ─────────────── */
+.streak-card {
+  background: var(--card); border-radius: var(--radius);
+  padding: 16px; box-shadow: var(--shadow);
+}
+.streak-card h3 { font-size: 13px; font-weight: 600; color: var(--text-sub); margin-bottom: 14px; letter-spacing: .3px; }
+.streak-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.streak-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.streak-label { font-size: 11px; font-weight: 600; }
+.streak-date { font-size: 10px; color: var(--text-sub); }
+.streak-dot {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--border); display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; transition: all .3s;
+}
+.streak-dot.today { box-shadow: 0 0 0 2.5px var(--accent); }
+.streak-dot.future { opacity: .25; }
+.streak-dot.full { background: var(--success); color: white; }
+.streak-dot.high { background: #6EE7B7; color: #065F46; }
+.streak-dot.mid { background: #FCD34D; color: #78350F; }
+.streak-dot.low { background: #FCA5A5; color: #7F1D1D; }
+
+/* ─────────────── EMPTY STATE ─────────────── */
+.empty-state { text-align: center; padding: 48px 24px; color: var(--text-sub); }
+.empty-state .ei { font-size: 44px; margin-bottom: 10px; }
+.empty-state p { font-size: 14px; line-height: 1.6; }
+
+/* ─────────────── SUCCESS BANNER ─────────────── */
+.success-banner {
+  background: linear-gradient(135deg, #10B981, #059669);
+  color: white; border-radius: var(--radius);
+  padding: 18px 20px; text-align: center;
+  font-size: 18px; font-weight: 700;
+  box-shadow: 0 4px 16px rgba(16,185,129,.35);
+  animation: pop .4s cubic-bezier(.175,.885,.32,1.275);
+}
+@keyframes pop {
+  0% { transform: scale(.92); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.success-banner .s-sub {
+  font-size: 13px; font-weight: 400; opacity: .85; margin-top: 4px;
+}
+
+/* ─────────────── STREAK BADGE ─────────────── */
+.tab-btn .tab-done { font-size: 12px; }
+.streak-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px;
+}
+.streak-header h3 { font-size: 13px; font-weight: 600; color: var(--text-sub); }
+.streak-count {
+  font-size: 12px; font-weight: 700; color: var(--success);
+  background: #D1FAE5; padding: 3px 10px; border-radius: 99px;
+}
+
+/* ─────────────── MODAL ─────────────── */
+.overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45);
+  z-index: 100; align-items: center; justify-content: center; padding: 20px;
+}
+.overlay.active { display: flex; }
+.modal {
+  background: var(--card); border-radius: var(--radius);
+  padding: 24px; width: 100%; max-width: 420px;
+  box-shadow: 0 16px 48px rgba(0,0,0,.15);
+}
+.modal h2 { font-size: 18px; font-weight: 700; margin-bottom: 20px; }
+.modal-actions { display: flex; gap: 8px; margin-top: 20px; }
+.modal-actions .btn { flex: 1; }
+
+.emoji-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px; margin: 10px 0; }
+.emoji-btn {
+  padding: 7px; border: 1.5px solid transparent; border-radius: 8px;
+  font-size: 20px; cursor: pointer; background: var(--bg); transition: all .15s;
+}
+.emoji-btn:hover, .emoji-btn.sel { border-color: var(--accent); background: var(--accent-light); }
+
+.color-row { display: flex; gap: 9px; flex-wrap: wrap; margin: 10px 0; }
+.color-btn {
+  width: 30px; height: 30px; border-radius: 50%;
+  border: 3px solid transparent; cursor: pointer; transition: transform .15s;
+}
+.color-btn:hover { transform: scale(1.15); }
+.color-btn.sel { border-color: var(--text); transform: scale(1.1); }
+
+/* ─────────────── CONTEXT MENU ─────────────── */
+.ctx {
+  position: fixed; background: var(--card); border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0,0,0,.15); padding: 6px;
+  z-index: 200; min-width: 160px; display: none;
+}
+.ctx button {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  padding: 10px 13px; border: none; background: transparent;
+  font-size: 14px; text-align: left; cursor: pointer;
+  border-radius: 7px; font-family: inherit; color: var(--text);
+}
+.ctx button:hover { background: var(--bg); }
+.ctx button.danger { color: var(--danger); }
+.ctx hr { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
+
+/* ─────────────── TOAST ─────────────── */
+#toast {
+  position: fixed; bottom: 24px; left: 50%;
+  transform: translateX(-50%) translateY(70px);
+  background: #1A1A2E; color: white;
+  padding: 11px 22px; border-radius: 99px;
+  font-size: 14px; font-weight: 500; z-index: 300;
+  transition: transform .3s ease; pointer-events: none; white-space: nowrap;
+}
+#toast.show { transform: translateX(-50%) translateY(0); }
+
+.divider { height: 1px; background: var(--border); margin: 14px 0; }
+
+@media (max-width: 480px) {
+  .setup-card { padding: 22px 16px; }
+  .streak-dot { width: 30px; height: 30px; font-size: 10px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════ LOGIN SCREEN ═══════════════ -->
+<div id="login-screen" class="screen">
+  <div class="setup-card" style="text-align:center">
+    <div style="font-size:52px;margin-bottom:12px">📋</div>
+    <h1 style="margin-bottom:8px">루틴 트래커</h1>
+    <p class="sub" style="margin-bottom:28px">구글 계정으로 로그인하면<br>모든 기기에서 자동으로 동기화됩니다</p>
+    <button class="btn btn-primary" onclick="googleLogin()" style="display:flex;align-items:center;justify-content:center;gap:10px">
+      <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#fff" d="M9 3.48c1.69 0 2.83.73 3.48 1.34l2.54-2.48C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.96l2.91 2.26C4.6 5.05 6.62 3.48 9 3.48z"/><path fill="#fff" d="M17.64 9.2c0-.74-.06-1.28-.19-1.84H9v3.34h4.96c-.1.83-.64 2.08-1.84 2.92l2.84 2.2c1.7-1.57 2.68-3.88 2.68-6.62z"/><path fill="#fff" d="M3.88 10.78A5.54 5.54 0 0 1 3.58 9c0-.62.11-1.22.29-1.78L.96 4.96A9 9 0 0 0 0 9c0 1.45.35 2.82.96 4.04l2.92-2.26z"/><path fill="#fff" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.84-2.2c-.76.53-1.78.9-3.12.9-2.38 0-4.4-1.57-5.12-3.74L.97 13.04C2.45 15.98 5.48 18 9 18z"/></svg>
+      Google로 로그인
+    </button>
+  </div>
+</div>
+
+<!-- ═══════════════ MAIN APP ═══════════════ -->
+<div id="app">
+  <div id="header">
+    <div>
+      <h1>📋 루틴 트래커</h1>
+      <div class="date-text" id="date-text"></div>
+    </div>
+    <button class="btn-icon" onclick="openSettings()" title="설정">⚙️</button>
+  </div>
+
+  <div id="tab-bar">
+    <button class="tab-add-btn" onclick="openAddTab()">+</button>
+  </div>
+
+  <div id="content"></div>
+</div>
+
+<!-- ═══════════════ MODALS ═══════════════ -->
+
+<!-- Tab Modal -->
+<div class="overlay" id="tab-modal">
+  <div class="modal">
+    <h2 id="tab-modal-title">탭 추가</h2>
+    <div class="fg">
+      <label>탭 이름</label>
+      <input type="text" id="tab-name" placeholder="예: 아침 루틴" maxlength="20" />
+    </div>
+    <div class="fg">
+      <label>이모지</label>
+      <div class="emoji-grid" id="emoji-grid"></div>
+    </div>
+    <div class="fg">
+      <label>색상</label>
+      <div class="color-row" id="color-row"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('tab-modal')">취소</button>
+      <button class="btn btn-primary" onclick="saveTab()">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- Routine Modal -->
+<div class="overlay" id="routine-modal">
+  <div class="modal">
+    <h2>루틴 추가</h2>
+    <div class="fg">
+      <label>루틴 이름</label>
+      <input type="text" id="routine-name" placeholder="예: 물 한 잔 마시기" maxlength="60" />
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('routine-modal')">취소</button>
+      <button class="btn btn-primary" onclick="saveRoutine()">추가</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Modal -->
+<div class="overlay" id="settings-modal">
+  <div class="modal">
+    <h2>⚙️ 설정</h2>
+    <div id="settings-info" style="font-size:14px;color:var(--text-sub);line-height:1.7"></div>
+    <div class="divider"></div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <button class="btn btn-ghost" onclick="logout()" style="text-align:left;color:var(--danger)">🚪 로그아웃</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="closeModal('settings-modal')">닫기</button>
+    </div>
+  </div>
+</div>
+
+<!-- Context Menu -->
+<div id="ctx" class="ctx"></div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- ═══════════════ FIREBASE SDK ═══════════════ -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+<script>
+// ═══════════════════════════════════════════
+// CONSTANTS
+// ═══════════════════════════════════════════
+const EMOJIS = ['☀️','🌙','💪','🏃','🧘','💊','📚','✍️','🎯','💧','🥗','🛏️','🧹','💻','🎵','🌱','❤️','⭐','🔥','✅','📌','🎨','🏋️','🚶','🧴','🍎','☕','🌸'];
+const COLORS = ['#4F46E5','#10B981','#F59E0B','#EF4444','#8B5CF6','#06B6D4','#F97316','#EC4899','#14B8A6','#84CC16'];
+const DAY_KO = ['일','월','화','수','목','금','토'];
+
+// ═══════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════
+let db = null;
+let roomCode = '';
+let currentTabId = null;
+let tabs = [];
+let routines = [];
+let todayChecks = {};
+let weekChecks = {};
+let editMode = false;
+let selEmoji = '📌';
+let selColor = '#4F46E5';
+let editTabId = null;
+let ctxTab = null;
+let unsubs = [];
+let routineUnsub = null;
+
+// ═══════════════════════════════════════════
+// SETUP FLOW
+// ═══════════════════════════════════════════
+function init() {
+  buildPickers();
+  bindKeys();
+  setupOutsideClick();
+  updateDateText();
+
+  firebase.initializeApp({
+    apiKey: "AIzaSyCuiVQ1TRVrSe4FYuIS6ONXfiNfz55zNQk",
+    authDomain: "routine-tracker-f1de1.firebaseapp.com",
+    projectId: "routine-tracker-f1de1",
+    storageBucket: "routine-tracker-f1de1.firebasestorage.app",
+    messagingSenderId: "37041493249",
+    appId: "1:37041493249:web:3b2e54ea81e838a8c3f700"
+  });
+
+  db = firebase.firestore();
+
+  firebase.auth().onAuthStateChanged(user => {
+    if (user) {
+      roomCode = user.uid;
+      launchApp();
+    } else {
+      show('login-screen');
+    }
+  });
+}
+
+function show(id) {
+  document.getElementById('login-screen').classList.toggle('active', id === 'login-screen');
+  document.getElementById('app').style.display = id === 'app' ? 'flex' : 'none';
+}
+
+function googleLogin() {
+  const provider = new firebase.auth.GoogleAuthProvider();
+  firebase.auth().signInWithRedirect(provider).catch(e => toast('로그인 실패: ' + e.message));
+}
+
+function openSettings() {
+  const user = firebase.auth().currentUser;
+  document.getElementById('settings-info').innerHTML =
+    `<b>${user ? user.displayName : ''}</b><br>${user ? user.email : ''}`;
+  openModal('settings-modal');
+}
+
+function logout() {
+  if (!confirm('로그아웃 할까요?')) return;
+  unsubs.forEach(u => u());
+  unsubs = [];
+  if (routineUnsub) { routineUnsub(); routineUnsub = null; }
+  firebase.auth().signOut();
+  closeModal('settings-modal');
+}
+
+function col(name) {
+  return db.collection('users').doc(roomCode).collection(name);
+}
+
+// ═══════════════════════════════════════════
+// LAUNCH APP
+// ═══════════════════════════════════════════
+function launchApp() {
+  document.getElementById('login-screen').classList.remove('active');
+  const app = document.getElementById('app');
+  app.style.display = 'flex';
+  updateDateText();
+  startListeners();
+}
+
+function startListeners() {
+  const u1 = col('tabs').orderBy('order').onSnapshot(snap => {
+    tabs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (!currentTabId && tabs.length > 0) currentTabId = tabs[0].id;
+    if (currentTabId && !tabs.find(t => t.id === currentTabId)) {
+      currentTabId = tabs.length > 0 ? tabs[0].id : null;
+    }
+    renderTabs();
+    startRoutineListener();
+  });
+
+  const u2 = col('checks').doc(todayStr()).onSnapshot(doc => {
+    todayChecks = doc.exists ? (doc.data() || {}) : {};
+    renderContent();
+  });
+
+  unsubs.push(u1, u2);
+  startWeekListeners();
+}
+
+function startRoutineListener() {
+  if (routineUnsub) routineUnsub();
+  routineUnsub = col('routines').onSnapshot(snap => {
+    routines = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderContent();
+  });
+}
+
+function startWeekListeners() {
+  getThisWeek().forEach(date => {
+    const u = col('checks').doc(date).onSnapshot(doc => {
+      weekChecks[date] = doc.exists ? (doc.data() || {}) : {};
+      rerenderStreak();
+    });
+    unsubs.push(u);
+  });
+}
+
+// ═══════════════════════════════════════════
+// DATE HELPERS
+// ═══════════════════════════════════════════
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;
+}
+function p2(n) { return String(n).padStart(2,'0'); }
+function getThisWeek() {
+  const today = new Date();
+  const dow = today.getDay(); // 0=Sun
+  const daysToMon = dow === 0 ? 6 : dow - 1;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - daysToMon);
+  return Array.from({length:7}, (_,i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    return `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;
+  });
+}
+function updateDateText() {
+  const d = new Date();
+  const el = document.getElementById('date-text');
+  if (el) el.textContent = `${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일 (${DAY_KO[d.getDay()]})`;
+}
+
+// ═══════════════════════════════════════════
+// RENDER TABS
+// ═══════════════════════════════════════════
+function renderTabs() {
+  const bar = document.getElementById('tab-bar');
+  const addBtn = bar.querySelector('.tab-add-btn');
+  bar.querySelectorAll('.tab-btn').forEach(el => el.remove());
+
+  tabs.forEach(tab => {
+    const tabRoutines = routines.filter(r => r.tabId === tab.id);
+    const allDone = tabRoutines.length > 0 && tabRoutines.every(r => todayChecks[r.id]);
+
+    const btn = document.createElement('button');
+    btn.className = 'tab-btn' + (tab.id === currentTabId ? ' active' : '');
+    btn.innerHTML = `${tab.emoji || '📌'} ${esc(tab.name)}${allDone ? ' <span class="tab-done">✅</span>' : ''}`;
+    const c = tab.color || '#4F46E5';
+    if (tab.id === currentTabId) {
+      btn.style.color = c;
+      btn.style.borderBottomColor = c;
+    }
+    btn.onclick = () => selectTab(tab.id);
+    btn.oncontextmenu = e => { e.preventDefault(); showCtxMenu(e, tab); };
+    btn.title = '우클릭: 편집/삭제';
+    bar.insertBefore(btn, addBtn);
+  });
+}
+
+function selectTab(id) {
+  currentTabId = id;
+  editMode = false;
+  renderTabs();
+  renderContent();
+}
+
+// ═══════════════════════════════════════════
+// RENDER CONTENT
+// ═══════════════════════════════════════════
+function renderContent() {
+  const container = document.getElementById('content');
+  if (!currentTabId) {
+    container.innerHTML = `<div class="empty-state" onclick="openAddTab()" style="cursor:pointer"><div class="ei">📋</div><p>여기를 눌러<br>첫 탭을 추가하세요!</p></div>`;
+    return;
+  }
+  const tab = tabs.find(t => t.id === currentTabId);
+  if (!tab) return;
+
+  const tabRoutines = routines
+    .filter(r => r.tabId === currentTabId)
+    .sort((a,b) => (a.order||0) - (b.order||0));
+
+  const checked = tabRoutines.filter(r => todayChecks[r.id]).length;
+  const total = tabRoutines.length;
+  const pct = total > 0 ? Math.round(checked/total*100) : 0;
+  const color = tab.color || '#4F46E5';
+
+  let html = `
+    <div class="tab-header">
+      <h2 style="color:${color}">${tab.emoji||''} ${esc(tab.name)}</h2>
+      <div class="tab-header-actions">
+        <button class="btn-icon" onclick="toggleEditMode()" title="${editMode?'편집 완료':'루틴 편집'}">${editMode?'✅':'✏️'}</button>
+        <button class="btn-icon" onclick="showCtxMenuByBtn(event, ${tabs.indexOf(tab)})" title="탭 옵션">⋯</button>
+      </div>
+    </div>
+  `;
+
+  if (total > 0) {
+    const fc = pct === 100 ? 'var(--success)' : (pct >= 50 ? '#F59E0B' : '#6B7280');
+    if (pct === 100) {
+      const streak = calcStreak(currentTabId);
+      html += `
+        <div class="success-banner">
+          🎉 ${esc(tab.name)} 완성!
+          <div class="s-sub">${streak > 1 ? `🔥 ${streak}일 연속 달성 중!` : '오늘 모든 루틴을 완료했어요!'}</div>
+        </div>
+      `;
+    } else {
+      html += `
+        <div class="progress-card">
+          <div class="progress-label">
+            <span>오늘 진행률</span>
+            <span style="color:${fc}">${checked}/${total} (${pct}%)</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width:${pct}%;background:${fc}"></div>
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  html += `<div class="routine-list ${editMode?'edit-mode':''}">`;
+
+  if (tabRoutines.length === 0) {
+    html += `<div class="empty-state" style="padding:32px 0"><div class="ei">🌱</div><p>아래 버튼으로 루틴을 추가하세요</p></div>`;
+  } else {
+    tabRoutines.forEach((r, idx) => {
+      const isChecked = !!todayChecks[r.id];
+      const timeVal = todayChecks[r.id + '_t'] || '';
+      const goal = r.goal || 7;
+      const goalLabel = goal === 7 ? '매일' : `주 ${goal}회`;
+      const timeBadge = isChecked
+        ? `<span class="r-time" onclick="editTime('${r.id}')">${timeVal || '+ 시간'}</span>`
+        : '';
+      html += `
+        <div class="routine-item${isChecked?' checked':''}">
+          <div class="r-move">
+            <button onclick="moveRoutine('${r.id}',-1)" ${idx===0?'disabled':''}>▲</button>
+            <button onclick="moveRoutine('${r.id}',1)" ${idx===tabRoutines.length-1?'disabled':''}>▼</button>
+          </div>
+          <div class="r-check${isChecked?' checked':''}" onclick="toggleCheck('${r.id}')"></div>
+          <span class="r-name">${esc(r.name)}</span>
+          ${timeBadge}
+          <span class="r-goal" onclick="setGoal('${r.id}',${goal})">${goalLabel}</span>
+          <button class="r-edit" onclick="editRoutineName('${r.id}','${esc(r.name)}')" title="이름 수정">✏️</button>
+          <button class="r-del" onclick="deleteRoutine('${r.id}')">✕</button>
+        </div>
+      `;
+    });
+  }
+
+  html += `</div>`;
+
+  if (!editMode) {
+    html += `<button class="add-routine-btn" onclick="openAddRoutine()">＋ 루틴 추가</button>`;
+  }
+
+  html += buildStreakHTML();
+  container.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════
+// RENDER STREAK
+// ═══════════════════════════════════════════
+const DAY_MON = ['월','화','수','목','금','토','일'];
+
+function buildStreakHTML() {
+  const dates = getThisWeek();
+  const tod = todayStr();
+  const tabRoutines = routines.filter(r => r.tabId === currentTabId);
+  const total = tabRoutines.length;
+
+  const streak = calcStreak(currentTabId);
+  const streakLabel = streak > 0 ? `🔥 ${streak}일 연속` : '';
+
+  let html = `<div class="streak-card"><div class="streak-header"><h3>📅 이번 주</h3>${streakLabel ? `<span class="streak-count">${streakLabel}</span>` : ''}</div><div class="streak-row">`;
+
+  dates.forEach((date, idx) => {
+    const d = new Date(date + 'T00:00:00');
+    const dayLabel = DAY_MON[idx];
+    const dateNum = d.getDate();
+    const isFuture = date > tod;
+    const isToday = date === tod;
+    const checks = weekChecks[date] || {};
+
+    let cls = 'streak-dot';
+    let content = '';
+
+    if (!isFuture && total > 0) {
+      const cnt = tabRoutines.filter(r => checks[r.id]).length;
+      const pct = cnt / total;
+      content = cnt > 0 ? String(cnt) : '';
+      if (pct === 1) cls += ' full';
+      else if (pct >= 0.7) cls += ' high';
+      else if (pct >= 0.3) cls += ' mid';
+      else if (pct > 0) cls += ' low';
+    }
+    if (isToday) cls += ' today';
+    if (isFuture) cls += ' future';
+
+    html += `
+      <div class="streak-col">
+        <div class="streak-label" style="font-weight:${isToday?'700':'500'};color:${isToday?'var(--accent)':'var(--text-sub)'}">${dayLabel}</div>
+        <div class="${cls}">${content}</div>
+        <div class="streak-date">${dateNum}</div>
+      </div>`;
+  });
+
+  html += `</div></div>`;
+  return html;
+}
+
+function calcStreak(tabId) {
+  const dates = getThisWeek();
+  const tod = todayStr();
+  const tabRoutines = routines.filter(r => r.tabId === tabId);
+  if (tabRoutines.length === 0) return 0;
+
+  let streak = 0;
+  const past = dates.filter(d => d <= tod).reverse();
+  for (const date of past) {
+    const checks = weekChecks[date] || {};
+    const allDone = tabRoutines.every(r => checks[r.id]);
+    if (allDone) streak++;
+    else break;
+  }
+  return streak;
+}
+
+function rerenderStreak() {
+  const container = document.getElementById('content');
+  const existing = container.querySelector('.streak-card');
+  if (existing) existing.outerHTML = buildStreakHTML();
+}
+
+// ═══════════════════════════════════════════
+// CHECK TOGGLE
+// ═══════════════════════════════════════════
+function toggleCheck(routineId) {
+  if (editMode) return;
+  const newVal = !todayChecks[routineId];
+  const now = new Date();
+  const timeStr = `${p2(now.getHours())}:${p2(now.getMinutes())}`;
+  todayChecks[routineId] = newVal;
+  if (newVal) todayChecks[routineId + '_t'] = timeStr;
+  else delete todayChecks[routineId + '_t'];
+  const update = { [routineId]: newVal };
+  if (newVal) update[routineId + '_t'] = timeStr;
+  else update[routineId + '_t'] = firebase.firestore.FieldValue.delete();
+  col('checks').doc(todayStr()).set(update, { merge: true });
+  renderContent();
+}
+
+function editTime(routineId) {
+  const cur = todayChecks[routineId + '_t'] || '';
+  const t = prompt('완료 시간을 입력하세요 (예: 09:30)', cur);
+  if (t === null) return;
+  const valid = /^\d{1,2}:\d{2}$/.test(t.trim());
+  if (!valid) { toast('올바른 형식이 아닙니다 (예: 09:30)'); return; }
+  todayChecks[routineId + '_t'] = t.trim();
+  col('checks').doc(todayStr()).set({ [routineId + '_t']: t.trim() }, { merge: true });
+  renderContent();
+}
+
+function toggleEditMode() {
+  editMode = !editMode;
+  renderContent();
+}
+
+// ═══════════════════════════════════════════
+// TAB CRUD
+// ═══════════════════════════════════════════
+function openAddTab() {
+  editTabId = null;
+  selEmoji = '☀️'; selColor = '#4F46E5';
+  document.getElementById('tab-modal-title').textContent = '탭 추가';
+  document.getElementById('tab-name').value = '';
+  updatePickers();
+  openModal('tab-modal');
+  setTimeout(() => document.getElementById('tab-name').focus(), 80);
+}
+
+function openEditTab() {
+  if (!ctxTab) return;
+  editTabId = ctxTab.id;
+  selEmoji = ctxTab.emoji || '📌';
+  selColor = ctxTab.color || '#4F46E5';
+  document.getElementById('tab-modal-title').textContent = '탭 편집';
+  document.getElementById('tab-name').value = ctxTab.name;
+  updatePickers();
+  openModal('tab-modal');
+  setTimeout(() => document.getElementById('tab-name').focus(), 80);
+}
+
+async function saveTab() {
+  const name = document.getElementById('tab-name').value.trim();
+  if (!name) { toast('탭 이름을 입력하세요'); return; }
+
+  if (editTabId) {
+    await col('tabs').doc(editTabId).update({ name, emoji: selEmoji, color: selColor });
+    toast('탭이 수정되었습니다');
+  } else {
+    const ref = await col('tabs').add({ name, emoji: selEmoji, color: selColor, order: tabs.length });
+    currentTabId = ref.id;
+    toast('탭이 추가되었습니다');
+  }
+  closeModal('tab-modal');
+}
+
+async function deleteTab() {
+  if (!ctxTab) return;
+  if (!confirm(`"${ctxTab.name}" 탭과 모든 루틴을 삭제할까요?`)) return;
+
+  const rSnap = await col('routines').where('tabId','==',ctxTab.id).get();
+  const batch = db.batch();
+  rSnap.docs.forEach(d => batch.delete(d.ref));
+  batch.delete(col('tabs').doc(ctxTab.id));
+  await batch.commit();
+
+  if (currentTabId === ctxTab.id) currentTabId = null;
+  toast('탭이 삭제되었습니다');
+}
+
+// ═══════════════════════════════════════════
+// ROUTINE CRUD
+// ═══════════════════════════════════════════
+function openAddRoutine() {
+  document.getElementById('routine-name').value = '';
+  openModal('routine-modal');
+  setTimeout(() => document.getElementById('routine-name').focus(), 80);
+}
+
+async function saveRoutine() {
+  const name = document.getElementById('routine-name').value.trim();
+  if (!name) { toast('루틴 이름을 입력하세요'); return; }
+  if (!currentTabId) return;
+
+  const n = routines.filter(r => r.tabId === currentTabId).length;
+  await col('routines').add({ name, tabId: currentTabId, order: n });
+  closeModal('routine-modal');
+  toast('루틴이 추가되었습니다');
+}
+
+async function editRoutineName(id, currentName) {
+  const newName = prompt('루틴 이름 수정', currentName);
+  if (!newName || !newName.trim() || newName.trim() === currentName) return;
+  await col('routines').doc(id).update({ name: newName.trim() });
+  toast('루틴 이름이 수정되었습니다');
+}
+
+async function moveRoutine(id, dir) {
+  const tabRoutines = routines
+    .filter(r => r.tabId === currentTabId)
+    .sort((a,b) => (a.order||0) - (b.order||0));
+  const idx = tabRoutines.findIndex(r => r.id === id);
+  const swapIdx = idx + dir;
+  if (swapIdx < 0 || swapIdx >= tabRoutines.length) return;
+  const batch = db.batch();
+  batch.update(col('routines').doc(tabRoutines[idx].id), { order: swapIdx });
+  batch.update(col('routines').doc(tabRoutines[swapIdx].id), { order: idx });
+  await batch.commit();
+}
+
+async function setGoal(id, current) {
+  const input = prompt('주간 목표 횟수를 입력하세요 (1~7)\n7=매일, 5=주5회, 3=주3회 …', current);
+  if (input === null) return;
+  const n = parseInt(input);
+  if (isNaN(n) || n < 1 || n > 7) { toast('1~7 사이 숫자를 입력하세요'); return; }
+  await col('routines').doc(id).update({ goal: n });
+  toast('목표가 설정되었습니다');
+}
+
+async function deleteRoutine(id) {
+  await col('routines').doc(id).delete();
+  // also clean up checks
+  const dateSnap = await col('checks').get();
+  const batch = db.batch();
+  dateSnap.docs.forEach(doc => {
+    if (doc.data()[id] !== undefined) {
+      batch.update(doc.ref, { [id]: firebase.firestore.FieldValue.delete() });
+    }
+  });
+  await batch.commit();
+  toast('루틴이 삭제되었습니다');
+}
+
+// ═══════════════════════════════════════════
+// CONTEXT MENU
+// ═══════════════════════════════════════════
+function showCtxMenu(e, tab) {
+  ctxTab = tab;
+  e.stopPropagation();
+  const menu = document.getElementById('ctx');
+  menu.innerHTML = `
+    <button onclick="openEditTab();hideCtx()">✏️ 탭 편집</button>
+    <hr>
+    <button class="danger" onclick="deleteTab();hideCtx()">🗑️ 탭 삭제</button>
+  `;
+  const x = Math.min(e.clientX, window.innerWidth - 180);
+  const y = Math.min(e.clientY + 4, window.innerHeight - 110);
+  menu.style.left = x + 'px'; menu.style.top = y + 'px';
+  menu.style.display = 'block';
+}
+
+function showCtxMenuByBtn(e, tabIndex) {
+  showCtxMenu(e, tabs[tabIndex]);
+}
+
+function hideCtx() { document.getElementById('ctx').style.display = 'none'; }
+
+function setupOutsideClick() {
+  document.addEventListener('click', e => {
+    if (!e.target.closest('#ctx')) hideCtx();
+  });
+}
+
+// ═══════════════════════════════════════════
+// PICKERS
+// ═══════════════════════════════════════════
+function buildPickers() {
+  document.getElementById('emoji-grid').innerHTML =
+    EMOJIS.map(e => `<button class="emoji-btn" onclick="pickEmoji('${e}')">${e}</button>`).join('');
+  document.getElementById('color-row').innerHTML =
+    COLORS.map(c => `<button class="color-btn" style="background:${c}" onclick="pickColor('${c}')"></button>`).join('');
+}
+
+function pickEmoji(e) { selEmoji = e; updatePickers(); }
+function pickColor(c) { selColor = c; updatePickers(); }
+
+function updatePickers() {
+  document.querySelectorAll('.emoji-btn').forEach(b => b.classList.toggle('sel', b.textContent === selEmoji));
+  document.querySelectorAll('.color-btn').forEach(b => {
+    const bg = b.style.background || b.style.backgroundColor;
+    b.classList.toggle('sel', bg === selColor);
+  });
+}
+
+// ═══════════════════════════════════════════
+// MODAL
+// ═══════════════════════════════════════════
+function openModal(id) { document.getElementById(id).classList.add('active'); }
+function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
+document.querySelectorAll('.overlay').forEach(o => {
+  o.addEventListener('click', e => { if (e.target === o) o.classList.remove('active'); });
+});
+
+// ═══════════════════════════════════════════
+// KEY BINDINGS
+// ═══════════════════════════════════════════
+function bindKeys() {
+  document.getElementById('tab-name').addEventListener('keydown', e => { if(e.key==='Enter') saveTab(); });
+  document.getElementById('routine-name').addEventListener('keydown', e => { if(e.key==='Enter') saveRoutine(); });
+  document.addEventListener('keydown', e => { if(e.key==='Escape') document.querySelectorAll('.overlay.active').forEach(o => o.classList.remove('active')); });
+}
+
+// ═══════════════════════════════════════════
+// UTILS
+// ═══════════════════════════════════════════
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+function esc(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ═══════════════════════════════════════════
+// START
+// ═══════════════════════════════════════════
+init();
+</script>
+</body>
+</html>
