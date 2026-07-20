@@ -786,7 +786,7 @@ function show(id) {
 
 function googleLogin() {
   const provider = new firebase.auth.GoogleAuthProvider();
-  firebase.auth().signInWithRedirect(provider).catch(e => toast('로그인 실패: ' + e.message));
+  firebase.auth().signInWithPopup(provider).catch(e => toast('로그인 실패: ' + e.message));
 }
 
 function openSettings() {
