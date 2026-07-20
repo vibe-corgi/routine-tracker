@@ -1,0 +1,26 @@
+{
+  "name": "루틴 트래커",
+  "short_name": "루틴",
+  "description": "매일의 루틴을 기록하고 통계로 확인하세요",
+  "start_url": "/routine-tracker/",
+  "scope": "/routine-tracker/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F3F4F6",
+  "theme_color": "#4F46E5",
+  "lang": "ko",
+  "icons": [
+    {
+      "src": "/routine-tracker/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/routine-tracker/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
