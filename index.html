@@ -111,20 +111,32 @@ body {
 /* ─────────────── TAB BAR ─────────────── */
 #tab-bar {
   background: var(--card); border-bottom: 1px solid var(--border);
-  display: flex; align-items: stretch;
+  display: flex; align-items: stretch; position: relative;
 }
 #tab-scroll {
   flex: 1; display: flex; overflow-x: auto; scrollbar-width: none;
-  gap: 2px; align-items: stretch; padding: 0 4px;
+  gap: 0; align-items: stretch; padding: 0;
+  scroll-behavior: smooth;
 }
 #tab-scroll::-webkit-scrollbar { display: none; }
-
+.tab-scroll-arrow {
+  position: absolute; top: 0; bottom: 0; width: 28px;
+  display: none; align-items: center; justify-content: center;
+  background: linear-gradient(to right, var(--card) 60%, transparent);
+  font-size: 14px; color: var(--text-sub); cursor: pointer;
+  border: none; z-index: 2; padding: 0;
+}
+.tab-scroll-arrow.right {
+  right: 40px;
+  background: linear-gradient(to left, var(--card) 60%, transparent);
+}
+.tab-scroll-arrow.visible { display: flex; }
 .tab-btn {
-  padding: 13px 15px; border: none; background: transparent;
-  font-size: 14px; font-weight: 500; color: var(--text-sub);
+  padding: 13px 14px; border: none; background: transparent;
+  font-size: 13px; font-weight: 500; color: var(--text-sub);
   cursor: pointer; white-space: nowrap; flex-shrink: 0;
   border-bottom: 2.5px solid transparent; transition: all .2s;
-  font-family: inherit; display: flex; align-items: center; gap: 5px;
+  font-family: inherit; display: flex; align-items: center; gap: 4px;
 }
 .tab-btn.active { font-weight: 700; }
 .tab-add-btn {
@@ -560,7 +572,9 @@ body {
   </div>
 
   <div id="tab-bar">
-    <div id="tab-scroll"></div>
+    <button class="tab-scroll-arrow left" id="tab-arrow-left" onclick="scrollTabs(-1)">‹</button>
+    <div id="tab-scroll" onscroll="updateTabArrows()"></div>
+    <button class="tab-scroll-arrow right" id="tab-arrow-right" onclick="scrollTabs(1)">›</button>
     <button class="tab-add-btn" onclick="openAddTab()">+</button>
   </div>
 
@@ -946,6 +960,19 @@ function updateDateText() {
 // ═══════════════════════════════════════════
 // RENDER TABS
 // ═══════════════════════════════════════════
+function scrollTabs(dir) {
+  const el = document.getElementById('tab-scroll');
+  if (el) el.scrollBy({ left: dir * 160, behavior: 'smooth' });
+}
+function updateTabArrows() {
+  const el = document.getElementById('tab-scroll');
+  if (!el) return;
+  const canLeft = el.scrollLeft > 4;
+  const canRight = el.scrollLeft + el.clientWidth < el.scrollWidth - 4;
+  document.getElementById('tab-arrow-left')?.classList.toggle('visible', canLeft);
+  document.getElementById('tab-arrow-right')?.classList.toggle('visible', canRight);
+}
+
 function renderTabs() {
   const bar = document.getElementById('tab-scroll') || document.getElementById('tab-bar');
   if (!bar) return;
@@ -971,6 +998,7 @@ function renderTabs() {
   // 선택된 탭이 보이도록 스크롤
   const active = bar.querySelector('.tab-btn.active');
   if (active) active.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  setTimeout(updateTabArrows, 50);
 }
 
 function selectTab(id) {
