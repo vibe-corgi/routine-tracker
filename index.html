@@ -417,6 +417,35 @@ body {
 
 .r-name-clickable { cursor: pointer; }
 .r-name-clickable:hover { color: var(--accent); text-decoration: underline; }
+
+.r-schedule {
+  font-size: 10px; color: #7C3AED; background: #EDE9FE;
+  border-radius: 6px; padding: 2px 7px; flex-shrink: 0;
+  font-family: 'Courier New', monospace; white-space: nowrap;
+}
+.edit-mode .r-schedule { display: none; }
+
+.stats-nav-row {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.stats-nav-label { font-size: 13px; font-weight: 700; color: var(--text); }
+.stats-nav-btn {
+  width: 30px; height: 30px; border: none; background: var(--bg);
+  border-radius: 8px; cursor: pointer; font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-sub); transition: background .15s;
+}
+.stats-nav-btn:hover { background: var(--border); }
+.stats-nav-btn:disabled { opacity: .3; cursor: default; }
+
+.schedule-compare {
+  display: flex; align-items: center; gap: 8px; margin-top: 14px;
+  padding: 10px 12px; background: #F5F3FF; border-radius: 10px;
+  border-left: 3px solid #8B5CF6;
+}
+.schedule-compare .sc-label { font-size: 11px; color: #7C3AED; font-weight: 600; }
+.schedule-compare .sc-val { font-size: 13px; font-weight: 700; color: #5B21B6; }
 </style>
 </head>
 <body>
@@ -510,6 +539,30 @@ body {
   </div>
 </div>
 
+<!-- Routine Settings Modal -->
+<div class="overlay" id="routine-settings-modal">
+  <div class="modal">
+    <h2>루틴 설정</h2>
+    <div class="fg">
+      <label>루틴 이름</label>
+      <input type="text" id="rs-name" maxlength="60" placeholder="루틴 이름" />
+    </div>
+    <div class="fg">
+      <label>예정 시간 <span style="font-weight:400;color:var(--text-sub)">(선택)</span></label>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="time" id="rs-start" style="flex:1;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;outline:none;background:#FAFAFA;color:var(--text);font-family:inherit" />
+        <span style="color:var(--text-sub);font-size:16px">~</span>
+        <input type="time" id="rs-end" style="flex:1;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;outline:none;background:#FAFAFA;color:var(--text);font-family:inherit" />
+      </div>
+      <div style="font-size:11px;color:var(--text-sub);margin-top:6px;line-height:1.5">설정하면 통계에서 실제 완료 시간과 비교할 수 있어요</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('routine-settings-modal')">취소</button>
+      <button class="btn btn-primary" onclick="saveRoutineSettings()">저장</button>
+    </div>
+  </div>
+</div>
+
 <!-- Stats Modal -->
 <div class="overlay" id="stats-modal">
   <div class="modal" style="max-height:88vh;overflow-y:auto">
@@ -579,6 +632,10 @@ let dragSrcId = null;
 let statsRoutineId = null;
 let statsCache = {};
 let statsTab = 'week';
+let statsWeekAnchor = '';
+let statsMonthYear = 0;
+let statsMonthMonth = 0;
+let settingRoutineId = null;
 
 // ═══════════════════════════════════════════
 // SETUP FLOW
@@ -856,8 +913,9 @@ function renderContent() {
           <div class="r-check${isChecked?' checked':''}" onclick="toggleCheck('${r.id}')"></div>
           <span class="r-name${editMode?'':' r-name-clickable'}" ${editMode?'':` onclick="openRoutineStats('${r.id}','${esc(r.name)}')" title="통계 보기"`}>${esc(r.name)}</span>
           ${timeBadge}
+          ${r.timeStart ? `<span class="r-schedule">${r.timeStart}${r.timeEnd?'~'+r.timeEnd:''}</span>` : ''}
           <span class="r-goal" onclick="setGoal('${r.id}',${goal})">${goalLabel}</span>
-          <button class="r-edit" onclick="editRoutineName('${r.id}','${esc(r.name)}')" title="이름 수정">✏️</button>
+          <button class="r-edit" onclick="openRoutineSettings('${r.id}','${esc(r.name)}','${r.timeStart||''}','${r.timeEnd||''}')" title="루틴 설정">✏️</button>
           <button class="r-del" onclick="deleteRoutine('${r.id}')">✕</button>
         </div>
       `;
@@ -1091,11 +1149,26 @@ async function dragDrop(e, targetId) {
   dragSrcId = null;
 }
 
-async function editRoutineName(id, currentName) {
-  const newName = prompt('루틴 이름 수정', currentName);
-  if (!newName || !newName.trim() || newName.trim() === currentName) return;
-  await col('routines').doc(id).update({ name: newName.trim() });
-  toast('루틴 이름이 수정되었습니다');
+function openRoutineSettings(id, name, timeStart, timeEnd) {
+  settingRoutineId = id;
+  document.getElementById('rs-name').value = name;
+  document.getElementById('rs-start').value = timeStart || '';
+  document.getElementById('rs-end').value = timeEnd || '';
+  openModal('routine-settings-modal');
+  setTimeout(() => document.getElementById('rs-name').focus(), 80);
+}
+
+async function saveRoutineSettings() {
+  const name = document.getElementById('rs-name').value.trim();
+  if (!name) { toast('루틴 이름을 입력하세요'); return; }
+  const timeStart = document.getElementById('rs-start').value;
+  const timeEnd = document.getElementById('rs-end').value;
+  const update = { name };
+  update.timeStart = timeStart || firebase.firestore.FieldValue.delete();
+  update.timeEnd = timeEnd || firebase.firestore.FieldValue.delete();
+  await col('routines').doc(settingRoutineId).update(update);
+  closeModal('routine-settings-modal');
+  toast('루틴 설정이 저장되었습니다');
 }
 
 async function moveRoutine(id, dir) {
@@ -1202,6 +1275,7 @@ document.querySelectorAll('.overlay').forEach(o => {
 function bindKeys() {
   document.getElementById('tab-name').addEventListener('keydown', e => { if(e.key==='Enter') saveTab(); });
   document.getElementById('routine-name').addEventListener('keydown', e => { if(e.key==='Enter') saveRoutine(); });
+  document.getElementById('rs-name').addEventListener('keydown', e => { if(e.key==='Enter') saveRoutineSettings(); });
   document.addEventListener('keydown', e => { if(e.key==='Escape') document.querySelectorAll('.overlay.active').forEach(o => o.classList.remove('active')); });
 }
 
@@ -1221,80 +1295,112 @@ function esc(str) {
 // ═══════════════════════════════════════════
 // STATS MODAL
 // ═══════════════════════════════════════════
-async function openRoutineStats(routineId, routineName) {
-  statsRoutineId = routineId;
-  statsTab = 'week';
-  document.getElementById('stats-title').textContent = routineName + ' 통계';
-  document.getElementById('stab-week').classList.add('active');
-  document.getElementById('stab-month').classList.remove('active');
-  document.getElementById('stats-content').innerHTML = '<div style="text-align:center;padding:32px;color:var(--text-sub)">로딩 중…</div>';
-  openModal('stats-modal');
-  await loadStatsCache();
-  renderStatsContent();
+function getMonthDates(year, month) {
+  const last = new Date(year, month, 0).getDate();
+  return Array.from({length: last}, (_, i) => `${year}-${p2(month)}-${p2(i+1)}`);
 }
 
-async function loadStatsCache() {
-  const tod = todayStr();
-  const dates = Array.from({length:35}, (_, i) => {
-    const d = new Date(tod + 'T00:00:00');
-    d.setDate(d.getDate() - (34 - i));
-    return `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;
-  });
-  statsCache = {};
-  await Promise.all(dates.map(async date => {
+async function loadStatsForDates(dates) {
+  const missing = dates.filter(d => statsCache[d] === undefined);
+  if (missing.length === 0) return;
+  await Promise.all(missing.map(async date => {
     const doc = await col('checks').doc(date).get();
     statsCache[date] = doc.exists ? (doc.data() || {}) : {};
   }));
 }
 
-function switchStatsTab(tab) {
+async function openRoutineStats(routineId, routineName) {
+  statsRoutineId = routineId;
+  statsTab = 'week';
+  statsWeekAnchor = viewDate;
+  const [y, m] = todayStr().split('-').map(Number);
+  statsMonthYear = y; statsMonthMonth = m;
+  statsCache = {};
+
+  document.getElementById('stats-title').textContent = routineName + ' 통계';
+  document.getElementById('stab-week').classList.add('active');
+  document.getElementById('stab-month').classList.remove('active');
+  document.getElementById('stats-content').innerHTML = '<div style="text-align:center;padding:32px;color:var(--text-sub)">로딩 중…</div>';
+  openModal('stats-modal');
+
+  const allDates = [...new Set([...getWeekOf(statsWeekAnchor), ...getMonthDates(y, m)])];
+  await loadStatsForDates(allDates);
+  renderStatsContent();
+}
+
+async function switchStatsTab(tab) {
   statsTab = tab;
   document.getElementById('stab-week').classList.toggle('active', tab === 'week');
   document.getElementById('stab-month').classList.toggle('active', tab === 'month');
+  document.getElementById('stats-content').innerHTML = '<div style="text-align:center;padding:32px;color:var(--text-sub)">로딩 중…</div>';
+  if (tab === 'week') await loadStatsForDates(getWeekOf(statsWeekAnchor));
+  else await loadStatsForDates(getMonthDates(statsMonthYear, statsMonthMonth));
   renderStatsContent();
 }
+
+async function statsNavWeek(dir) {
+  const d = new Date(statsWeekAnchor + 'T00:00:00');
+  d.setDate(d.getDate() + dir * 7);
+  statsWeekAnchor = `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;
+  document.getElementById('stats-content').innerHTML = '<div style="text-align:center;padding:32px;color:var(--text-sub)">로딩 중…</div>';
+  await loadStatsForDates(getWeekOf(statsWeekAnchor));
+  renderStatsContent();
+}
+
+async function statsNavMonth(dir) {
+  statsMonthMonth += dir;
+  if (statsMonthMonth > 12) { statsMonthMonth = 1; statsMonthYear++; }
+  if (statsMonthMonth < 1) { statsMonthMonth = 12; statsMonthYear--; }
+  document.getElementById('stats-content').innerHTML = '<div style="text-align:center;padding:32px;color:var(--text-sub)">로딩 중…</div>';
+  await loadStatsForDates(getMonthDates(statsMonthYear, statsMonthMonth));
+  renderStatsContent();
+}
+
+function minsToTime(mins) { return `${p2(Math.floor(mins/60))}:${p2(mins%60)}`; }
+function timeToMins(t) { const [h,m] = t.split(':').map(Number); return h*60+m; }
 
 function renderStatsContent() {
   const rid = statsRoutineId;
   if (!rid) return;
   const tod = todayStr();
-  const dates = Object.keys(statsCache).sort();
+  const routine = routines.find(r => r.id === rid);
 
-  const completedDates = dates.filter(d => d <= tod && statsCache[d][rid]);
-  const times = completedDates.map(d => statsCache[d][rid + '_t']).filter(Boolean);
-
-  let avgTime = '–';
-  if (times.length > 0) {
-    const totalMins = times.reduce((s, t) => {
-      const [h, m] = t.split(':').map(Number); return s + h * 60 + m;
-    }, 0);
-    const avg = Math.round(totalMins / times.length);
-    avgTime = `${p2(Math.floor(avg/60))}:${p2(avg%60)}`;
-  }
-
+  // ── global summary stats (all cached dates) ──
+  const allCachedDates = Object.keys(statsCache).sort().filter(d => d <= tod);
   let maxStreak = 0, cur = 0;
-  dates.forEach(d => {
-    if (d > tod) return;
-    if (statsCache[d][rid]) cur++;
-    else cur = 0;
-    if (cur > maxStreak) maxStreak = cur;
+  allCachedDates.forEach(d => {
+    if (statsCache[d][rid]) { cur++; if (cur > maxStreak) maxStreak = cur; } else cur = 0;
   });
-
-  const thisMonthDates = dates.filter(d => d.startsWith(tod.slice(0,7)) && d <= tod);
-  const thisMonthDone = thisMonthDates.filter(d => statsCache[d][rid]).length;
-  const monthRate = thisMonthDates.length > 0 ? Math.round(thisMonthDone / thisMonthDates.length * 100) : 0;
+  const allTimes = allCachedDates.map(d => statsCache[d][rid+'_t']).filter(Boolean);
+  let avgTime = '–';
+  if (allTimes.length > 0) {
+    const avg = Math.round(allTimes.reduce((s,t) => s + timeToMins(t), 0) / allTimes.length);
+    avgTime = minsToTime(avg);
+  }
 
   let html = '';
 
   if (statsTab === 'week') {
-    const weekDates = getWeekOf(viewDate);
+    const weekDates = getWeekOf(statsWeekAnchor);
+    const isCurrentWeek = weekDates.join(',') === getWeekOf(todayStr()).join(',');
+    const weekStart = new Date(weekDates[0]+'T00:00:00');
+    const weekEnd   = new Date(weekDates[6]+'T00:00:00');
+    const weekLabel = isCurrentWeek ? '이번 주'
+      : `${weekStart.getMonth()+1}/${weekStart.getDate()} ~ ${weekEnd.getMonth()+1}/${weekEnd.getDate()}`;
+
+    html += `<div class="stats-nav-row">
+      <button class="stats-nav-btn" onclick="statsNavWeek(-1)">‹</button>
+      <span class="stats-nav-label">${weekLabel}</span>
+      <button class="stats-nav-btn" onclick="statsNavWeek(1)" ${isCurrentWeek?'disabled':''}>›</button>
+    </div>`;
+
     html += '<div class="stats-dots">';
     weekDates.forEach((date, idx) => {
       const isFuture = date > tod;
       const isToday = date === tod;
       const done = !isFuture && statsCache[date]?.[rid];
       const d = new Date(date + 'T00:00:00');
-      const cls = ['stats-dot-circle', done ? 'done' : '', isToday ? 'today' : '', isFuture ? 'future' : ''].join(' ');
+      const cls = ['stats-dot-circle', done?'done':'', isToday?'today':'', isFuture?'future':''].join(' ');
       html += `<div class="stats-dot">
         <div class="stats-dot-lbl" style="font-weight:${isToday?700:500};color:${isToday?'var(--accent)':'var(--text-sub)'}">${DAY_MON[idx]}</div>
         <div class="${cls}"></div>
@@ -1302,16 +1408,33 @@ function renderStatsContent() {
       </div>`;
     });
     html += '</div>';
+
     const weekPast = weekDates.filter(d => d <= tod);
     const weekDone = weekPast.filter(d => statsCache[d]?.[rid]).length;
-    const weekRate = weekPast.length > 0 ? Math.round(weekDone / weekPast.length * 100) : 0;
-    html += `<div style="text-align:center;font-size:13px;color:var(--text-sub);margin:6px 0 14px">이번 주 달성률 <b style="color:var(--success)">${weekRate}%</b> (${weekDone}/${weekPast.length}일)</div>`;
+    const weekRate = weekPast.length > 0 ? Math.round(weekDone/weekPast.length*100) : 0;
+    const weekTimes = weekPast.filter(d => statsCache[d]?.[rid]).map(d => statsCache[d][rid+'_t']).filter(Boolean);
+    let weekAvg = '–';
+    if (weekTimes.length > 0) {
+      weekAvg = minsToTime(Math.round(weekTimes.reduce((s,t) => s+timeToMins(t),0)/weekTimes.length));
+    }
+    html += `<div style="text-align:center;font-size:13px;color:var(--text-sub);margin:6px 0 12px">달성률 <b style="color:var(--success)">${weekRate}%</b> (${weekDone}/${weekPast.length}일)&ensp;·&ensp;평균 완료 <b>${weekAvg}</b></div>`;
+
   } else {
-    const [year, month] = tod.split('-').map(Number);
-    const firstDay = new Date(year, month - 1, 1);
-    const lastDay = new Date(year, month, 0);
-    const startOffset = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
-    html += `<div style="font-size:12px;font-weight:600;color:var(--text-sub);margin-bottom:6px">${year}년 ${month}월</div>`;
+    const year = statsMonthYear, month = statsMonthMonth;
+    const tod2 = `${year}-${p2(month)}-99`;
+    const firstDay = new Date(year, month-1, 1);
+    const lastDay  = new Date(year, month, 0);
+    const startOffset = firstDay.getDay() === 0 ? 6 : firstDay.getDay()-1;
+    const [cy, cm] = todayStr().split('-').map(Number);
+    const isCurrentMonth = year === cy && month === cm;
+    const isPastLimit = year < cy - 1 || (year === cy - 1 && month < cm - 11);
+
+    html += `<div class="stats-nav-row">
+      <button class="stats-nav-btn" onclick="statsNavMonth(-1)" ${isPastLimit?'disabled':''}>‹</button>
+      <span class="stats-nav-label">${year}년 ${month}월</span>
+      <button class="stats-nav-btn" onclick="statsNavMonth(1)" ${isCurrentMonth?'disabled':''}>›</button>
+    </div>`;
+
     html += '<div class="stats-calendar-hdr">' + ['월','화','수','목','금','토','일'].map(d =>
       `<div style="text-align:center;font-size:10px;color:var(--text-sub);padding:2px">${d}</div>`).join('') + '</div>';
     html += '<div class="stats-calendar">';
@@ -1319,20 +1442,48 @@ function renderStatsContent() {
     for (let day = 1; day <= lastDay.getDate(); day++) {
       const dateStr = `${year}-${p2(month)}-${p2(day)}`;
       const isFuture = dateStr > tod;
-      const isToday = dateStr === tod;
+      const isToday  = dateStr === tod;
       const done = !isFuture && statsCache[dateStr]?.[rid];
-      const cls = 'cal-day ' + (isFuture ? 'future' : done ? 'done' : 'miss') + (isToday ? ' today-cal' : '');
-      html += `<div class="${cls}">${day}</div>`;
+      const cls = 'cal-day '+(isFuture?'future':done?'done':'miss')+(isToday?' today-cal':'');
+      html += `<div class="${cls}" title="${dateStr}">${day}</div>`;
     }
     html += '</div>';
+
+    const monthPast = getMonthDates(year, month).filter(d => d <= tod);
+    const monthDone = monthPast.filter(d => statsCache[d]?.[rid]).length;
+    const monthRate = monthPast.length > 0 ? Math.round(monthDone/monthPast.length*100) : 0;
+    const monthTimes = monthPast.filter(d => statsCache[d]?.[rid]).map(d => statsCache[d][rid+'_t']).filter(Boolean);
+    let monthAvg = '–';
+    if (monthTimes.length > 0) {
+      monthAvg = minsToTime(Math.round(monthTimes.reduce((s,t) => s+timeToMins(t),0)/monthTimes.length));
+    }
+    html += `<div style="text-align:center;font-size:13px;color:var(--text-sub);margin:8px 0 12px">달성률 <b style="color:var(--success)">${monthRate}%</b> (${monthDone}/${monthPast.length}일)&ensp;·&ensp;평균 완료 <b>${monthAvg}</b></div>`;
   }
 
+  // ── summary strip ──
   html += `<div class="stats-summary">
-    <div class="stat-item"><div class="stat-val">${monthRate}%</div><div class="stat-lbl">이번 달 달성률</div></div>
     <div class="stat-item"><div class="stat-val">${maxStreak}일</div><div class="stat-lbl">최장 연속 달성</div></div>
-    <div class="stat-item"><div class="stat-val">${completedDates.length}회</div><div class="stat-lbl">최근 35일 달성</div></div>
-    <div class="stat-item"><div class="stat-val" style="font-size:16px">${avgTime}</div><div class="stat-lbl">평균 완료 시간</div></div>
+    <div class="stat-item"><div class="stat-val" style="font-size:16px">${avgTime}</div><div class="stat-lbl">전체 평균 완료 시간</div></div>
   </div>`;
+
+  // ── schedule vs actual (if set) ──
+  if (routine?.timeStart && allTimes.length > 0) {
+    const scheduled = timeToMins(routine.timeStart);
+    const avgMins = Math.round(allTimes.reduce((s,t) => s+timeToMins(t),0)/allTimes.length);
+    const diff = avgMins - scheduled;
+    const diffLabel = diff === 0 ? '정시' : diff > 0 ? `${diff}분 늦게` : `${-diff}분 일찍`;
+    const diffColor = diff === 0 ? 'var(--success)' : diff > 5 ? 'var(--danger)' : '#F59E0B';
+    html += `<div class="schedule-compare" style="margin-top:10px">
+      <div>
+        <div class="sc-label">예정 시간</div>
+        <div class="sc-val">${routine.timeStart}${routine.timeEnd ? ' ~ '+routine.timeEnd : ''}</div>
+      </div>
+      <div style="margin-left:auto;text-align:right">
+        <div class="sc-label">평균 완료</div>
+        <div class="sc-val" style="color:${diffColor}">${avgTime} <span style="font-size:11px;font-weight:500">(${diffLabel})</span></div>
+      </div>
+    </div>`;
+  }
 
   document.getElementById('stats-content').innerHTML = html;
 }
