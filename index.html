@@ -787,16 +787,17 @@ function init() {
 
   db = firebase.firestore();
 
-  // 리다이렉트 후 복귀 시 결과 처리 (iOS Safari 필수)
-  firebase.auth().getRedirectResult().then(result => {
-    if (result && result.user) {
-      // onAuthStateChanged가 처리하므로 추가 작업 불필요
-    }
-  }).catch(e => {
-    if (e.code !== 'auth/credential-already-in-use') {
-      toast('로그인 오류: ' + e.message);
-    }
-  });
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+  if (isMobile) {
+    // 모바일: redirect 후 돌아왔을 때 결과 처리
+    firebase.auth().getRedirectResult()
+      .then(result => { /* onAuthStateChanged가 처리 */ })
+      .catch(e => {
+        // 이전 실패 state가 남아있으면 무시하고 다시 시도 가능하게
+        console.warn('redirect result error (무시 가능):', e.code);
+      });
+  }
 
   firebase.auth().onAuthStateChanged(user => {
     if (user) {
@@ -820,17 +821,29 @@ function googleLogin() {
   if (errBox) errBox.style.display = 'none';
   if (btn) btn.disabled = true;
 
-  firebase.auth().signInWithPopup(provider)
-    .catch(e => {
-      if (e.code === 'auth/popup-blocked' || e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request') {
-        // 팝업 차단 → redirect 시도
-        return firebase.auth().signInWithRedirect(provider);
-      }
-      // iOS Safari 세션스토리지 분리 오류 등
-      if (errBox) errBox.style.display = 'block';
-      console.error('login error', e.code, e.message);
-    })
-    .finally(() => { if (btn) btn.disabled = false; });
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+  if (isMobile) {
+    // 모바일(iOS/Android): 팝업 대신 페이지 이동 방식 — sessionStorage 분리 문제 없음
+    firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+      .then(() => firebase.auth().signInWithRedirect(provider))
+      .catch(e => {
+        if (btn) btn.disabled = false;
+        if (errBox) errBox.style.display = 'block';
+        console.error('login error', e.code, e.message);
+      });
+  } else {
+    // 데스크탑: 팝업 방식
+    firebase.auth().signInWithPopup(provider)
+      .catch(e => {
+        if (e.code === 'auth/popup-blocked' || e.code === 'auth/popup-closed-by-user') {
+          return firebase.auth().signInWithRedirect(provider);
+        }
+        if (errBox) errBox.style.display = 'block';
+        console.error('login error', e.code, e.message);
+      })
+      .finally(() => { if (btn) btn.disabled = false; });
+  }
 }
 
 function openSettings() {
