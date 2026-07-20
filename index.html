@@ -769,6 +769,17 @@ function init() {
 
   db = firebase.firestore();
 
+  // 리다이렉트 후 복귀 시 결과 처리 (iOS Safari 필수)
+  firebase.auth().getRedirectResult().then(result => {
+    if (result && result.user) {
+      // onAuthStateChanged가 처리하므로 추가 작업 불필요
+    }
+  }).catch(e => {
+    if (e.code !== 'auth/credential-already-in-use') {
+      toast('로그인 오류: ' + e.message);
+    }
+  });
+
   firebase.auth().onAuthStateChanged(user => {
     if (user) {
       roomCode = user.uid;
@@ -786,7 +797,17 @@ function show(id) {
 
 function googleLogin() {
   const provider = new firebase.auth.GoogleAuthProvider();
-  firebase.auth().signInWithPopup(provider).catch(e => toast('로그인 실패: ' + e.message));
+  // iOS Safari / PWA 환경에서는 popup이 sessionStorage 공유 못해서 redirect 사용
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const isStandalone = window.navigator.standalone === true ||
+    window.matchMedia('(display-mode: standalone)').matches;
+  if (isIOS || isStandalone) {
+    firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL).then(() =>
+      firebase.auth().signInWithRedirect(provider)
+    ).catch(e => toast('로그인 실패: ' + e.message));
+  } else {
+    firebase.auth().signInWithPopup(provider).catch(e => toast('로그인 실패: ' + e.message));
+  }
 }
 
 function openSettings() {
