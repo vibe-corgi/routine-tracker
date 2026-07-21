@@ -317,11 +317,25 @@ body {
 /* ─────────────── DRAG ─────────────── */
 .r-drag {
   display: none; color: var(--text-sub); cursor: grab; font-size: 16px;
-  padding: 0 2px; flex-shrink: 0; user-select: none;
+  padding: 0 2px; flex-shrink: 0;
+  user-select: none; -webkit-user-select: none;
+  touch-action: none; -webkit-touch-callout: none;
 }
 .edit-mode .r-drag { display: flex; align-items: center; }
 .routine-item.dragging { opacity: .35; }
 .routine-item.drag-over { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 12px; }
+.r-name {
+  user-select: none; -webkit-user-select: none;
+  -webkit-touch-callout: none; -webkit-user-drag: none;
+}
+#touch-drag-ghost {
+  position: fixed; z-index: 9999; pointer-events: none;
+  opacity: .85; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.25);
+  background: var(--card); padding: 10px 14px;
+  font-size: 14px; font-weight: 500; color: var(--text);
+  max-width: 80vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: none;
+}
 
 /* ─────────────── STREAK BADGE ─────────────── */
 .tab-btn .tab-done { font-size: 12px; }
@@ -1120,13 +1134,14 @@ function renderContent() {
       const memoVal = esc(r.memo || '');
       html += `
         <div class="routine-item${isChecked?' checked':''}"
+          data-rid="${r.id}"
           draggable="${editMode}"
           ondragstart="dragStart(event,'${r.id}')"
           ondragover="dragOver(event,'${r.id}')"
           ondragleave="dragLeave(event)"
           ondrop="dragDrop(event,'${r.id}')">
           <div class="routine-item-row">
-            <span class="r-drag">⠿</span>
+            <span class="r-drag" ontouchstart="touchDragStart(event,'${r.id}')">⠿</span>
             <div class="r-check${isChecked?' checked':''}" onclick="toggleCheck('${r.id}')"></div>
             <span class="r-name${editMode?'':' r-name-clickable'}" ${editMode?'':` onclick="openRoutineStats('${r.id}','${esc(r.name)}')" title="통계 보기"`}>${esc(r.name)}</span>
             ${timeBadge}
@@ -1376,6 +1391,11 @@ function dragOver(e, id) {
   e.preventDefault();
   document.querySelectorAll('.routine-item').forEach(el => el.classList.remove('drag-over'));
   if (dragSrcId !== id) e.target.closest('.routine-item')?.classList.add('drag-over');
+  // 데스크탑 자동 스크롤
+  const ZONE = 80, SPEED = 10;
+  const y = e.clientY;
+  if (y < ZONE) window.scrollBy(0, -SPEED);
+  else if (y > window.innerHeight - ZONE) window.scrollBy(0, SPEED);
 }
 function dragLeave(e) {
   e.target.closest('.routine-item')?.classList.remove('drag-over');
@@ -1398,6 +1418,136 @@ async function dragDrop(e, targetId) {
   reordered.forEach((r, i) => batch.update(col('routines').doc(r.id), { order: i }));
   await batch.commit();
   dragSrcId = null;
+}
+
+// ── 모바일 터치 드래그 ──
+let _tdId = null, _tdTimer = null, _tdGhost = null, _tdScrollTimer = null;
+
+function touchDragStart(e, id) {
+  if (!editMode) return;
+  const touch = e.touches[0];
+  const item = e.target.closest('.routine-item');
+
+  _tdTimer = setTimeout(() => {
+    _tdId = id;
+    if (navigator.vibrate) navigator.vibrate(35);
+    item.classList.add('dragging');
+
+    // 고스트 생성
+    const rName = item.querySelector('.r-name');
+    _tdGhost = document.createElement('div');
+    _tdGhost.id = 'touch-drag-ghost';
+    _tdGhost.textContent = rName ? rName.textContent : '';
+    _tdGhost.style.left = (touch.clientX - 20) + 'px';
+    _tdGhost.style.top  = (touch.clientY - 20) + 'px';
+    document.body.appendChild(_tdGhost);
+
+    document.addEventListener('touchmove', _tdMove, { passive: false });
+    document.addEventListener('touchend',  _tdEnd,  { passive: false });
+    document.addEventListener('touchcancel', _tdCancel, { passive: false });
+  }, 400);
+
+  // 롱프레스 전에 손가락 떼거나 움직이면 취소
+  e.target.addEventListener('touchend',    _tdAbortTimer, { once: true });
+  e.target.addEventListener('touchcancel', _tdAbortTimer, { once: true });
+  e.target.addEventListener('touchmove',   _tdAbortTimer, { once: true, passive: false });
+}
+
+function _tdAbortTimer() {
+  clearTimeout(_tdTimer); _tdTimer = null;
+}
+
+function _tdMove(e) {
+  if (!_tdId) return;
+  e.preventDefault();
+  const touch = e.touches[0];
+  const cx = touch.clientX, cy = touch.clientY;
+
+  if (_tdGhost) {
+    _tdGhost.style.left = (cx - 20) + 'px';
+    _tdGhost.style.top  = (cy - 20) + 'px';
+  }
+
+  // 자동 스크롤
+  const ZONE = 80, SPEED = 6;
+  clearTimeout(_tdScrollTimer);
+  if (cy < ZONE) {
+    _tdScrollTimer = setInterval(() => window.scrollBy(0, -SPEED), 16);
+  } else if (cy > window.innerHeight - ZONE) {
+    _tdScrollTimer = setInterval(() => window.scrollBy(0, SPEED), 16);
+  } else {
+    clearInterval(_tdScrollTimer); _tdScrollTimer = null;
+  }
+
+  // 드롭 위치 표시
+  document.querySelectorAll('.routine-item').forEach(el => el.classList.remove('drag-over'));
+  const items = [...document.querySelectorAll('.routine-item')];
+  for (const el of items) {
+    const rect = el.getBoundingClientRect();
+    if (cy >= rect.top && cy <= rect.bottom) {
+      const srcEl = items.find(el2 => el2.classList.contains('dragging'));
+      if (el !== srcEl) el.classList.add('drag-over');
+      break;
+    }
+  }
+}
+
+async function _tdEnd(e) {
+  clearInterval(_tdScrollTimer); _tdScrollTimer = null;
+  document.removeEventListener('touchmove', _tdMove);
+  document.removeEventListener('touchend',  _tdEnd);
+  document.removeEventListener('touchcancel', _tdCancel);
+  if (!_tdId) return;
+
+  const touch = e.changedTouches[0];
+  const cy = touch.clientY;
+
+  // 드롭 대상 찾기
+  const items = [...document.querySelectorAll('.routine-item')];
+  let targetEl = null;
+  for (const el of items) {
+    const rect = el.getBoundingClientRect();
+    if (cy >= rect.top && cy <= rect.bottom) { targetEl = el; break; }
+  }
+
+  // 정리
+  document.querySelectorAll('.routine-item').forEach(el => {
+    el.classList.remove('drag-over'); el.classList.remove('dragging');
+  });
+  if (_tdGhost) { _tdGhost.remove(); _tdGhost = null; }
+
+  // 순서 저장
+  if (targetEl) {
+    const targetRoutineId = targetEl.getAttribute('data-rid');
+    if (targetRoutineId && targetRoutineId !== _tdId) {
+      const tabRoutines = routines
+        .filter(r => r.tabId === currentTabId)
+        .sort((a,b) => (a.order||0) - (b.order||0));
+      const fromIdx = tabRoutines.findIndex(r => r.id === _tdId);
+      const toIdx   = tabRoutines.findIndex(r => r.id === targetRoutineId);
+      if (fromIdx !== -1 && toIdx !== -1) {
+        const reordered = [...tabRoutines];
+        const [moved] = reordered.splice(fromIdx, 1);
+        reordered.splice(toIdx, 0, moved);
+        const batch = db.batch();
+        reordered.forEach((r, i) => batch.update(col('routines').doc(r.id), { order: i }));
+        await batch.commit();
+      }
+    }
+  }
+  _tdId = null;
+}
+
+function _tdCancel() {
+  clearInterval(_tdScrollTimer); _tdScrollTimer = null;
+  document.removeEventListener('touchmove', _tdMove);
+  document.removeEventListener('touchend',  _tdEnd);
+  document.removeEventListener('touchcancel', _tdCancel);
+  document.querySelectorAll('.routine-item').forEach(el => {
+    el.classList.remove('drag-over'); el.classList.remove('dragging');
+  });
+  if (_tdGhost) { _tdGhost.remove(); _tdGhost = null; }
+  _tdId = null;
 }
 
 // ═══════════════════════════════════════════
