@@ -1941,28 +1941,57 @@ function renderStatsContent() {
   }
 
   // ── summary strip ──
+  const allDone = allCachedDates.filter(d => statsCache[d]?.[rid]).length;
+  const allRate = allCachedDates.length > 0 ? Math.round(allDone/allCachedDates.length*100) : 0;
   html += `<div class="stats-summary">
     <div class="stat-item"><div class="stat-val">${maxStreak}일</div><div class="stat-lbl">최장 연속 달성</div></div>
-    <div class="stat-item"><div class="stat-val" style="font-size:16px">${avgTime}</div><div class="stat-lbl">전체 평균 완료 시간</div></div>
+    <div class="stat-item"><div class="stat-val">${allRate}%</div><div class="stat-lbl">전체 완료율</div></div>
+    <div class="stat-item"><div class="stat-val" style="font-size:16px">${avgTime}</div><div class="stat-lbl">평균 완료 시간</div></div>
   </div>`;
 
-  // ── schedule vs actual (if set) ──
-  if (routine?.timeStart && allTimes.length > 0) {
-    const scheduled = timeToMins(routine.timeStart);
-    const avgMins = Math.round(allTimes.reduce((s,t) => s+timeToMins(t),0)/allTimes.length);
-    const diff = avgMins - scheduled;
-    const diffLabel = diff === 0 ? '정시' : diff > 0 ? `${diff}분 늦게` : `${-diff}분 일찍`;
-    const diffColor = diff === 0 ? 'var(--success)' : diff > 5 ? 'var(--danger)' : '#F59E0B';
-    html += `<div class="schedule-compare" style="margin-top:10px">
-      <div>
-        <div class="sc-label">예정 시간</div>
-        <div class="sc-val">${routine.timeStart}${routine.timeEnd ? ' ~ '+routine.timeEnd : ''}</div>
-      </div>
-      <div style="margin-left:auto;text-align:right">
-        <div class="sc-label">평균 완료</div>
-        <div class="sc-val" style="color:${diffColor}">${avgTime} <span style="font-size:11px;font-weight:500">(${diffLabel})</span></div>
-      </div>
-    </div>`;
+  // ── 목표 시간 준수 분석 (timeStart가 설정된 경우) ──
+  if (routine?.timeStart) {
+    const tStart = timeToMins(routine.timeStart);
+    const tEnd   = routine.timeEnd ? timeToMins(routine.timeEnd) : null;
+    const daysWithTime = allCachedDates.filter(d => statsCache[d]?.[rid] && statsCache[d]?.[rid+'_t']);
+    const daysNoTime   = allCachedDates.filter(d => statsCache[d]?.[rid] && !statsCache[d]?.[rid+'_t']);
+
+    let early = 0, onTime = 0, late = 0;
+    daysWithTime.forEach(d => {
+      const t = timeToMins(statsCache[d][rid+'_t']);
+      if (t < tStart) early++;
+      else if (tEnd !== null ? t <= tEnd : t <= tStart + 5) onTime++;
+      else late++;
+    });
+
+    const total = daysWithTime.length;
+    const pct = n => total > 0 ? Math.round(n/total*100) : 0;
+    const earlyPct = pct(early), onTimePct = pct(onTime), latePct = pct(late);
+
+    if (total > 0) {
+      html += `<div class="schedule-compare" style="margin-top:10px;flex-direction:column;gap:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div class="sc-label" style="font-size:12px;font-weight:700;color:var(--text)">⏱ 목표 시간 준수 분석</div>
+          <div class="sc-label">${routine.timeStart}${routine.timeEnd?' ~ '+routine.timeEnd:''} 기준 · ${total}회 기록</div>
+        </div>
+        <div style="display:flex;height:10px;border-radius:6px;overflow:hidden;gap:2px">
+          ${early  > 0 ? `<div style="flex:${early};background:#60A5FA" title="일찍 완료 ${early}회"></div>` : ''}
+          ${onTime > 0 ? `<div style="flex:${onTime};background:#34D399" title="목표 내 완료 ${onTime}회"></div>` : ''}
+          ${late   > 0 ? `<div style="flex:${late};background:#F87171" title="늦게 완료 ${late}회"></div>` : ''}
+        </div>
+        <div style="display:flex;gap:12px;font-size:12px;flex-wrap:wrap">
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#34D399;margin-right:4px;vertical-align:middle"></span>목표 내 <b>${onTimePct}%</b> (${onTime}회)</span>
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#60A5FA;margin-right:4px;vertical-align:middle"></span>일찍 완료 <b>${earlyPct}%</b> (${early}회)</span>
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#F87171;margin-right:4px;vertical-align:middle"></span>늦게 완료 <b>${latePct}%</b> (${late}회)</span>
+          ${daysNoTime.length > 0 ? `<span style="color:var(--text-sub)">시간 미기록 ${daysNoTime.length}회</span>` : ''}
+        </div>
+      </div>`;
+    } else {
+      html += `<div class="schedule-compare" style="margin-top:10px">
+        <div class="sc-label">⏱ 목표 시간 ${routine.timeStart}${routine.timeEnd?' ~ '+routine.timeEnd:''} 설정됨</div>
+        <div class="sc-label" style="margin-top:4px">완료 후 시간을 기록하면 준수율을 확인할 수 있어요</div>
+      </div>`;
+    }
   }
 
   document.getElementById('stats-content').innerHTML = html;
