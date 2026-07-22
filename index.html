@@ -199,7 +199,7 @@ body {
 }
 .r-check.checked { background: var(--success); border-color: var(--success); color: white; }
 .r-check.checked::after { content: '✓'; font-size: 13px; font-weight: 800; }
-.edit-mode .r-check { pointer-events: none; opacity: .5; }
+/* .edit-mode removed */
 
 .r-name { flex: 1; font-size: 15px; line-height: 1.4; }
 .routine-item.checked .r-name { text-decoration: line-through; color: var(--text-sub); }
@@ -207,10 +207,10 @@ body {
 .r-del {
   width: 28px; height: 28px; border: none; background: #FEE2E2;
   color: var(--danger); border-radius: 7px; cursor: pointer;
-  font-size: 15px; display: none; align-items: center; justify-content: center;
+  font-size: 15px; display: flex; align-items: center; justify-content: center;
   font-weight: 700; flex-shrink: 0;
 }
-.edit-mode .r-del { display: flex; }
+.r-del { display: flex; }
 
 .r-time {
   font-size: 11px; color: var(--text-sub); background: var(--bg);
@@ -219,7 +219,6 @@ body {
   font-family: 'Courier New', monospace; display: inline-flex; align-items: center;
 }
 .r-time:hover { border-color: var(--accent); color: var(--accent); }
-.edit-mode .r-time { display: none; }
 
 .r-goal {
   font-size: 10px; font-weight: 600; color: #8B5CF6;
@@ -231,15 +230,13 @@ body {
 .r-edit {
   width: 26px; height: 26px; border: none; background: #EFF6FF;
   color: #3B82F6; border-radius: 6px; cursor: pointer;
-  font-size: 13px; display: none; align-items: center; justify-content: center;
+  font-size: 13px; display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
-.edit-mode .r-edit { display: flex; }
 
 .r-move {
   display: none; flex-direction: column; gap: 1px; flex-shrink: 0;
 }
-.edit-mode .r-move { display: flex; }
 .r-move button {
   width: 22px; height: 18px; border: none; background: var(--bg);
   border-radius: 4px; cursor: pointer; font-size: 10px; color: var(--text-sub);
@@ -316,12 +313,13 @@ body {
 
 /* ─────────────── DRAG ─────────────── */
 .r-drag {
-  display: none; color: var(--text-sub); cursor: grab; font-size: 16px;
+  display: flex; align-items: center; color: var(--text-sub); cursor: grab; font-size: 16px;
   padding: 0 2px; flex-shrink: 0;
   user-select: none; -webkit-user-select: none;
   touch-action: none; -webkit-touch-callout: none;
+  opacity: .4;
 }
-.edit-mode .r-drag { display: flex; align-items: center; }
+.r-drag:hover { opacity: 1; }
 .routine-item.dragging { opacity: .35; }
 .routine-item.drag-over { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 12px; }
 .r-name {
@@ -523,7 +521,6 @@ body {
   border-radius: 6px; padding: 2px 7px; flex-shrink: 0;
   font-family: 'Courier New', monospace; white-space: nowrap;
 }
-.edit-mode .r-schedule { display: none; }
 
 .stats-nav-row {
   display: flex; align-items: center; justify-content: space-between;
@@ -754,7 +751,6 @@ let tabs = [];
 let routines = [];
 let todayChecks = {};
 let weekChecks = {};
-let editMode = false;
 let selEmoji = '📌';
 let selColor = '#4F46E5';
 let editTabId = null;
@@ -1017,7 +1013,6 @@ function renderTabs() {
 
 function selectTab(id) {
   currentTabId = id;
-  editMode = false;
   renderTabs();
   renderContent();
 }
@@ -1054,7 +1049,6 @@ function renderContent() {
         ${tabTimeBadge}
       </div>
       <div class="tab-header-actions">
-        <button class="btn-icon" onclick="toggleEditMode()" title="${editMode?'편집 완료':'루틴 편집'}">${editMode?'✅':'✏️'}</button>
         <button class="btn-icon" onclick="openTabStatsAt(${tabs.indexOf(tab)})" title="탭 통계">📊</button>
         <button class="btn-icon" onclick="showCtxMenuByBtn(event, ${tabs.indexOf(tab)})" title="탭 옵션">⋯</button>
       </div>
@@ -1118,7 +1112,7 @@ function renderContent() {
   const _preserveMemo = document.activeElement?.id === 'tab-memo'
     ? document.getElementById('tab-memo')?.value : null;
 
-  html += `<div class="routine-list ${editMode?'edit-mode':''}">`;
+  html += `<div class="routine-list">`;
 
   if (tabRoutines.length === 0) {
     html += `<div class="empty-state" style="padding:32px 0"><div class="ei">🌱</div><p>아래 버튼으로 루틴을 추가하세요</p></div>`;
@@ -1135,7 +1129,7 @@ function renderContent() {
       html += `
         <div class="routine-item${isChecked?' checked':''}"
           data-rid="${r.id}"
-          draggable="${editMode}"
+          draggable="true"
           ondragstart="dragStart(event,'${r.id}')"
           ondragover="dragOver(event,'${r.id}')"
           ondragleave="dragLeave(event)"
@@ -1143,7 +1137,7 @@ function renderContent() {
           <div class="routine-item-row">
             <span class="r-drag" ontouchstart="touchDragStart(event,'${r.id}')">⠿</span>
             <div class="r-check${isChecked?' checked':''}" onclick="toggleCheck('${r.id}')"></div>
-            <span class="r-name${editMode?'':' r-name-clickable'}" ${editMode?'':` onclick="openRoutineStats('${r.id}','${esc(r.name)}')" title="통계 보기"`}>${esc(r.name)}</span>
+            <span class="r-name r-name-clickable" onclick="openRoutineStats('${r.id}','${esc(r.name)}')" title="통계 보기">${esc(r.name)}</span>
             ${timeBadge}
             ${r.timeStart ? `<span class="r-schedule">${r.timeStart}${r.timeEnd?'~'+r.timeEnd:''}</span>` : ''}
             <span class="r-goal" onclick="setGoal('${r.id}',${goal})">${goalLabel}</span>
@@ -1163,9 +1157,7 @@ function renderContent() {
 
   html += `</div>`;
 
-  if (!editMode) {
-    html += `<button class="add-routine-btn" onclick="openAddRoutine()">＋ 루틴 추가</button>`;
-  }
+  html += `<button class="add-routine-btn" onclick="openAddRoutine()">＋ 루틴 추가</button>`;
 
   html += buildStreakHTML();
   container.innerHTML = html;
@@ -1261,7 +1253,6 @@ function rerenderStreak() {
 // CHECK TOGGLE
 // ═══════════════════════════════════════════
 function toggleCheck(routineId) {
-  if (editMode) return;
   const newVal = !todayChecks[routineId];
   const now = new Date();
   const timeStr = `${p2(now.getHours())}:${p2(now.getMinutes())}`;
@@ -1286,10 +1277,6 @@ function editTime(routineId) {
   renderContent();
 }
 
-function toggleEditMode() {
-  editMode = !editMode;
-  renderContent();
-}
 
 // ═══════════════════════════════════════════
 // TAB CRUD
@@ -1424,7 +1411,6 @@ async function dragDrop(e, targetId) {
 let _tdId = null, _tdTimer = null, _tdGhost = null, _tdScrollTimer = null;
 
 function touchDragStart(e, id) {
-  if (!editMode) return;
   const touch = e.touches[0];
   const item = e.target.closest('.routine-item');
 
