@@ -177,6 +177,8 @@ body {
 }
 .routine-item-row {
   display: flex; align-items: center; gap: 11px;
+  user-select: none; -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .routine-memo-input {
   width: 100%; box-sizing: border-box;
@@ -1133,9 +1135,10 @@ function renderContent() {
           ondragstart="dragStart(event,'${r.id}')"
           ondragover="dragOver(event,'${r.id}')"
           ondragleave="dragLeave(event)"
-          ondrop="dragDrop(event,'${r.id}')">
+          ondrop="dragDrop(event,'${r.id}')"
+          ontouchstart="touchDragStart(event,'${r.id}')">
           <div class="routine-item-row">
-            <span class="r-drag" ontouchstart="touchDragStart(event,'${r.id}')">⠿</span>
+            <span class="r-drag">⠿</span>
             <div class="r-check${isChecked?' checked':''}" onclick="toggleCheck('${r.id}')"></div>
             <span class="r-name r-name-clickable" onclick="openRoutineStats('${r.id}','${esc(r.name)}')" title="통계 보기">${esc(r.name)}</span>
             ${timeBadge}
@@ -1370,11 +1373,6 @@ async function saveRoutine() {
 }
 
 function dragStart(e, id) {
-  // 드래그 핸들에서 시작한 경우만 허용
-  if (!e.target.closest('.r-drag')) {
-    e.preventDefault();
-    return;
-  }
   dragSrcId = id;
   e.dataTransfer.effectAllowed = 'move';
   setTimeout(() => e.target.closest('.routine-item').classList.add('dragging'), 0);
