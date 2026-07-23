@@ -1370,6 +1370,11 @@ async function saveRoutine() {
 }
 
 function dragStart(e, id) {
+  // 드래그 핸들에서 시작한 경우만 허용
+  if (!e.target.closest('.r-drag')) {
+    e.preventDefault();
+    return;
+  }
   dragSrcId = id;
   e.dataTransfer.effectAllowed = 'move';
   setTimeout(() => e.target.closest('.routine-item').classList.add('dragging'), 0);
@@ -1781,6 +1786,9 @@ async function setGoal(id, current) {
 }
 
 async function deleteRoutine(id) {
+  const r = routines.find(r => r.id === id);
+  const name = r ? r.name : '이 루틴';
+  if (!confirm(`"${name}"을(를) 삭제할까요?`)) return;
   await col('routines').doc(id).delete();
   // also clean up checks
   const dateSnap = await col('checks').get();
